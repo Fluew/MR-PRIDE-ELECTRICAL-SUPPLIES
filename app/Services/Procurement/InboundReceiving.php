@@ -8,6 +8,7 @@ use App\Models\InboundDelivery;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
 use App\Models\StockMovement;
+use App\Models\Supplier;
 use App\Models\SupplierProductCost;
 use App\Models\SupplierSkuMapping;
 use App\Models\Team;
@@ -100,6 +101,7 @@ class InboundReceiving
             }
             $date = Carbon::parse($data['delivery_date'])->startOfDay();
             $this->assertDeliveryDate($date, $pos);
+            $supplierId = $this->deliverySupplierId($team, $pos->first(), $data['supplier_id'] ?? null);
 
             $progress = $this->progress($pos->keys()->all());
             foreach ($lines as $i => $line) {
@@ -125,7 +127,7 @@ class InboundReceiving
                 'delivery_number' => InboundDelivery::reserveNumber($team->id),
                 'delivery_date' => $date->toDateString(),
                 'purchase_order_number' => $data['po_number'],
-                'supplier_id' => $pos->first()->supplier_id,
+                'supplier_id' => $supplierId,
                 'status' => InboundDelivery::CONFIRMED,
                 'confirmed_by_id' => $user->id,
                 'confirmed_at' => now(),
@@ -154,7 +156,7 @@ class InboundReceiving
                     'over_receipt_approved_by_id' => $received > $open ? $user->id : null,
                     'unit' => $po->unit_of_measure ?: 'PCS',
                     'description' => $po->description,
-                    'supplier_id' => $po->supplier_id,
+                    'supplier_id' => $supplierId,
                     'received_by_id' => $user->id,
                     'status' => 'Delivered',
                     'notes' => $header->notes,
@@ -167,8 +169,12 @@ class InboundReceiving
                 $summary[] = "{$po->description}: {$received} received, {$line['accepted_quantity']} accepted, {$line['rejected_quantity']} rejected";
             }
 
-            AuditLogger::record('inbound_delivery.confirmed', "Delivery {$header->delivery_number} confirmed for purchase order {$header->purchase_order_number}: ".implode('; ', $summary).'.', $header,
-                ['purchase_order' => $header->purchase_order_number, 'delivery_date' => $header->delivery_date->toDateString(), 'lines' => $summary], $user);
+            $orderSupplierId = $pos->first()->supplier_id;
+            $changed = $supplierId !== null && (int) $supplierId !== (int) $orderSupplierId;
+            AuditLogger::record('inbound_delivery.confirmed', "Delivery {$header->delivery_number} confirmed for purchase order {$header->purchase_order_number}: ".implode('; ', $summary).'.'
+                .($changed ? ' Delivered by '.Supplier::whereKey($supplierId)->value('name').', not the supplier on the purchase order.' : ''), $header,
+                ['purchase_order' => $header->purchase_order_number, 'delivery_date' => $header->delivery_date->toDateString(), 'lines' => $summary]
+                + ($changed ? ['supplier_id' => (int) $supplierId, 'purchase_order_supplier_id' => $orderSupplierId] : []), $user);
 
             return $header->fresh(['items']);
         });
@@ -406,6 +412,24 @@ class InboundReceiving
             ->mapWithKeys(fn ($m) => [$m->supplier_id.'|'.$m->supplier_sku => $m->product]);
     }
 
+    /**
+     * The supplier this delivery is recorded under: the one chosen on the form, or the purchase
+     * order's when none was chosen. A different supplier must be an active one of this team.
+     * The purchase order itself keeps its own supplier.
+     */
+    private function deliverySupplierId(Team $team, PurchaseOrder $po, mixed $chosen): ?int
+    {
+        $chosen = (int) $chosen ?: null;
+        if ($chosen === null || $chosen === (int) $po->supplier_id) {
+            return $po->supplier_id;
+        }
+        if (! Supplier::where('team_id', $team->id)->where('status', 'Active')->whereKey($chosen)->exists()) {
+            throw new WorkflowException('Select an active registered supplier.', 'supplier_id');
+        }
+
+        return $chosen;
+    }
+
     private function assertDeliveryDate(Carbon $date, Collection $pos): void
     {
         if ($date->isAfter(today())) {
@@ -544,11 +568,13 @@ class InboundReceiving
         if ($po->unit_cost === null || SupplierProductCost::where('delivery_id', $delivery->id)->exists()) {
             return;
         }
+        // The supplier that delivered; its SKU is only known when it is the order's own supplier.
+        $supplierId = $delivery->supplier_id ?: $po->supplier_id;
         SupplierProductCost::create([
             'team_id' => $delivery->team_id,
-            'supplier_id' => $po->supplier_id,
+            'supplier_id' => $supplierId,
             'product_id' => $product->id,
-            'supplier_sku' => $po->item_sku,
+            'supplier_sku' => (int) $supplierId === (int) $po->supplier_id ? $po->item_sku : null,
             'unit_cost' => $po->unit_cost,
             'unit_of_measure' => $po->unit_of_measure,
             'purchase_order_id' => $po->id,

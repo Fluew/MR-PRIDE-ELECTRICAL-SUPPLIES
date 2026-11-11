@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Services\Forecast\SmaForecaster;
 use App\Services\Inventory\ProductPrioritizer;
 use App\Support\Csv;
+use App\Support\DateNormalizer;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -26,13 +27,12 @@ class ForecastController extends Controller
         $minDate = Carbon::create(2020, 1, 1);
 
         // Resolve from_date / to_date from request (fallback: current year start → today)
-        $fromDate = $request->filled('from_date')
-            ? Carbon::parse($request->input('from_date'))->max($minDate)
-            : Carbon::create($today->year, 1, 1);
+        // A date that cannot be read is treated as not given, never a server error.
+        $fromDate = DateNormalizer::carbonOrNull($request->input('from_date'))?->max($minDate)
+            ?? Carbon::create($today->year, 1, 1);
 
-        $toDate = $request->filled('to_date')
-            ? Carbon::parse($request->input('to_date'))->min($today)
-            : $today->copy();
+        $toDate = DateNormalizer::carbonOrNull($request->input('to_date'))?->min($today)
+            ?? $today->copy();
 
         // Guard: from must not be after to
         if ($fromDate->gt($toDate)) {
@@ -206,13 +206,12 @@ class ForecastController extends Controller
         $today = Carbon::today();
         $minDate = Carbon::create(2020, 1, 1);
 
-        $fromDate = $request->filled('from_date')
-            ? Carbon::parse($request->input('from_date'))->max($minDate)
-            : Carbon::create($today->year, 1, 1);
+        // A date that cannot be read is treated as not given, never a server error.
+        $fromDate = DateNormalizer::carbonOrNull($request->input('from_date'))?->max($minDate)
+            ?? Carbon::create($today->year, 1, 1);
 
-        $toDate = $request->filled('to_date')
-            ? Carbon::parse($request->input('to_date'))->min($today)
-            : $today->copy();
+        $toDate = DateNormalizer::carbonOrNull($request->input('to_date'))?->min($today)
+            ?? $today->copy();
 
         if ($fromDate->gt($toDate)) {
             $fromDate = Carbon::create($today->year, 1, 1);

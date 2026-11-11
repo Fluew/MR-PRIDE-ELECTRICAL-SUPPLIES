@@ -32,6 +32,8 @@ class InboundDeliveryController extends Controller
         $team = $this->team($request);
         $data = $request->validate([
             'po_number' => ['required', 'string', 'max:100'],
+            // The supplier that delivered. Left out = the purchase order's supplier.
+            'supplier_id' => ['nullable', 'integer', Rule::exists('suppliers', 'id')->where('team_id', $team->id)->whereNull('deleted_at')],
             'delivery_date' => ['required', 'date', 'before_or_equal:today'],
             'supplier_document_number' => ['nullable', 'string', 'max:100'],
             'notes' => ['nullable', 'string', 'max:1000'],
@@ -74,6 +76,7 @@ class InboundDeliveryController extends Controller
             'purchase_order_number' => $header->purchase_order_number,
             'order_date' => $poDate?->toDateString(),
             'supplier' => $header->supplier?->name,
+            'supplier_id' => $header->supplier_id,
             'supplier_document_number' => $header->supplier_document_number,
             'notes' => $header->notes,
             'status' => $header->status,
@@ -190,6 +193,7 @@ class InboundDeliveryController extends Controller
     {
         return [
             'po_number.required' => 'Select a purchase order.',
+            'supplier_id.*' => 'Select a registered supplier.',
             'delivery_date.before_or_equal' => 'The delivery date cannot be in the future.',
             'lines.required' => 'Select a purchase order with products to receive.',
             'lines.*.received_quantity.required' => 'Enter the received quantity of every product (0 if it did not arrive).',
@@ -216,7 +220,7 @@ class InboundDeliveryController extends Controller
     /** Delivery drivers see only customer deliveries (same rule as the Deliveries page). */
     private function assertNotDeliveryStaff(?User $user): void
     {
-        abort_if($user && ! $user->isAdmin() && ($user->role === 'staff_deliveries' || in_array('deliveries', $user->assignedModules(), true)), 403, 'Inbound deliveries are handled by procurement and inventory staff.');
+        abort_if($user && $user->isDeliveryDriverOnly(), 403, 'Inbound deliveries are handled by procurement and inventory staff.');
     }
 
     private function find(Request $request): InboundDelivery

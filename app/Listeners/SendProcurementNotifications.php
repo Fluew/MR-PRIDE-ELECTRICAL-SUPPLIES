@@ -97,7 +97,10 @@ class SendProcurementNotifications
     private function tellRequester($pr, $actor, string $outcome): void
     {
         $requester = $pr->requestedBy;
-        if ($requester && $requester->role !== 'staff_procurement' && $requester->id !== $actor?->id) {
+        // Procurement staff see the outcome in their own module (checked by module, so staff with
+        // several modules are treated the same whichever module their role was set from).
+        $worksInProcurement = $requester && $requester->isStaff() && $requester->hasModule('procurement');
+        if ($requester && ! $worksInProcurement && $requester->id !== $actor?->id) {
             $path = match (true) {
                 $requester->isAdmin() => "/{$pr->team->slug}/procurement?tab=requests",
                 $pr->quotation_id !== null => $this->quotationPath($pr),

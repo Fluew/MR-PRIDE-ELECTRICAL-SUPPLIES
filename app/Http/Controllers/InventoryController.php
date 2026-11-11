@@ -553,7 +553,7 @@ class InventoryController extends Controller
                 'new_stock' => $newStock,
                 'reference_number' => $ref,
                 'reason' => $validated['reason'],
-                'remarks' => $validated['remarks'] ?: "Adjusted from {$prevStock} to {$newStock} ({$diff})",
+                'remarks' => ($validated['remarks'] ?? null) ?: "Adjusted from {$prevStock} to {$newStock} ({$diff})",
                 'movement_date' => now(),
             ]);
 

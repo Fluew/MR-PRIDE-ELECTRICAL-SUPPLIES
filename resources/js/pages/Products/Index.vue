@@ -364,14 +364,21 @@ function scrollToCategory(event: MouseEvent, id: string) {
                 <!-- Search Bar Aligned Along the 4 Clickable Routes -->
                 <div class="relative mt-8 w-full">
                     <Search
-                        class="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-[#F8B803]"
+                        class="pointer-events-none absolute top-1/2 left-4 z-10 size-5 -translate-y-1/2 text-[#F8B803]"
                     />
                     <input
+                        id="product-search"
                         v-model="searchQuery"
                         type="text"
-                        placeholder="Search by product, brand, equipment (e.g. Breaker, Makita, PVC, Welding)..."
-                        class="w-full rounded-xl border border-white/20 bg-black/60 py-3.5 pr-12 pl-12 text-sm text-white shadow-lg backdrop-blur-md transition-colors placeholder:text-gray-300 focus:border-[#F8B803] focus:bg-black/80 focus:ring-2 focus:ring-[#F8B803]/30 focus:outline-none sm:text-base"
+                        placeholder=" "
+                        class="peer w-full rounded-xl border border-white/20 bg-black/60 px-12 pt-5 pb-2 text-sm text-white shadow-lg backdrop-blur-md transition-colors focus:border-[#F8B803] focus:bg-black/80 focus:ring-2 focus:ring-[#F8B803]/30 focus:outline-none sm:text-base"
                     />
+                    <label
+                        for="product-search"
+                        class="pointer-events-none absolute top-2 left-12 origin-left text-xs text-[#F8B803] transition-all duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:text-sm peer-placeholder-shown:text-gray-300 peer-focus:top-2 peer-focus:translate-y-0 peer-focus:text-xs peer-focus:text-[#F8B803]"
+                    >
+                        Search
+                    </label>
                     <button
                         v-if="searchQuery"
                         @click="searchQuery = ''"

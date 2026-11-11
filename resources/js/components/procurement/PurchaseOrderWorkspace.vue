@@ -14,7 +14,8 @@ const emit = defineEmits<{ close: [] }>();
 
 const page = usePage();
 const teamSlug = computed(() => (page.props as any).currentTeam?.slug || (page.props as any).team?.slug || '');
-const canManageProcurement = computed(() => props.isAdmin || ['admin', 'staff_procurement'].includes((page.props as any).auth?.user?.role));
+// By assigned module (as the server checks it), so staff with several modules see the actions too.
+const canManageProcurement = computed(() => props.isAdmin || Boolean((page.props as any).auth?.is_admin) || ((page.props as any).auth?.modules ?? []).includes('procurement'));
 const { formatMoney } = useCurrency();
 
 const data = ref<any>(null);

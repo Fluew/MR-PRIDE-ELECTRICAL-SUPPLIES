@@ -204,7 +204,7 @@ const props = defineProps<{
         failed: number;
         attemptsRemaining: number;
     };
-    deliveryStaffList?: Array<{ id: number; name: string; email: string; role: string }>;
+    deliveryStaffList?: Array<{ id: number; name: string; email: string; role: string; role_label?: string }>;
     statusOptions?: Array<{ value: string; label: string; badgeClass: string }>;
     canPrepare?: boolean;
     inboundDeliveries?: {
@@ -831,7 +831,7 @@ const executeDeleteOutbound = () => {
                     >
                         <option value="All">All Delivery Drivers</option>
                         <option v-for="staff in deliveryStaffList" :key="staff.id" :value="String(staff.id)">
-                            {{ staff.name }} ({{ staff.role }})
+                            {{ staff.name }} ({{ staff.role_label ?? staff.role }})
                         </option>
                     </select>
 
@@ -1509,7 +1509,7 @@ const executeDeleteOutbound = () => {
                     >
                         <option value="" disabled>Select Driver</option>
                         <option v-for="staff in deliveryStaffList" :key="staff.id" :value="String(staff.id)">
-                            {{ staff.name }} ({{ staff.role }})
+                            {{ staff.name }} ({{ staff.role_label ?? staff.role }})
                         </option>
                     </select>
                 </div>
@@ -1790,6 +1790,7 @@ const executeDeleteOutbound = () => {
         :is-admin="!!isAdmin"
         :orders="receivableOrders ?? []"
         :products="products ?? []"
+        :suppliers="suppliers ?? []"
         :categories="productCategories ?? []"
         :delivery="correctingDelivery"
         @close="closeRecorder"

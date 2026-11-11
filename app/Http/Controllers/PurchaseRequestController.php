@@ -9,6 +9,7 @@ use App\Models\Supplier;
 use App\Models\SupplierSkuMapping;
 use App\Models\Team;
 use App\Services\AuditLogger;
+use App\Services\Import\ValueParser;
 use App\Services\MaterialList\ExtractionException;
 use App\Services\Procurement\ProcurementWorkflow;
 use App\Services\Procurement\PurchaseOrderReader;
@@ -407,9 +408,13 @@ class PurchaseRequestController extends Controller
             }
 
             // 3. QUANTITY
-            $rawQty = isset($row[$qtyIdx]) ? preg_replace('/[^0-9]/', '', (string) $row[$qtyIdx]) : '0';
-            $qty = is_numeric($rawQty) ? (int) $rawQty : 0;
-            if ($qty <= 0) {
+            // Read as written: a minus sign or a decimal point is never stripped to make a number.
+            $rawQty = isset($row[$qtyIdx]) ? trim((string) $row[$qtyIdx]) : '';
+            $wholeQty = ValueParser::wholeQuantity($rawQty);
+            $qty = $wholeQty ?? 0;
+            if ($rawQty !== '' && $wholeQty === null) {
+                $errors[] = "Quantity \"{$rawQty}\" is not a whole number.";
+            } elseif ($qty <= 0) {
                 $errors[] = 'Quantity must be at least 1.';
             }
 
@@ -452,6 +457,16 @@ class PurchaseRequestController extends Controller
                 if ($supplierId === null) {
                     $errors[] = "SUPPLIER \"{$rawSupplier}\" is not in the supplier list. Add the supplier first, or leave the column empty.";
                 }
+            }
+
+            // 10. Already recorded: the same line of the same purchase order is not imported twice.
+            if (empty($errors) && PurchaseOrder::where('team_id', $team->id)
+                ->where('po_number', $rawPo)
+                ->where('description', $desc)
+                ->where('quantity', $qty)
+                ->when($rawSku !== '', fn ($q) => $q->where('item_sku', $rawSku), fn ($q) => $q->whereNull('item_sku'))
+                ->exists()) {
+                $errors[] = "Purchase order {$rawPo} already has this line recorded; it was not imported again.";
             }
 
             if (! empty($errors)) {

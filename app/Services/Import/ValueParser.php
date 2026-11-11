@@ -129,6 +129,21 @@ class ValueParser
     }
 
     /**
+     * A whole quantity as written in a file ("100", "1,000", "25 pcs"), sign included, or null
+     * when the cell is empty or not a whole number ("2.5", "abc"). Nothing is dropped from the
+     * text to make it fit: "-5" stays −5 for the caller to refuse, and "2.5" is never read as 25.
+     */
+    public static function wholeQuantity(?string $text): ?int
+    {
+        $value = self::quantityAndUnit($text)['value'];
+        if ($value === null || floor($value) !== $value || abs($value) > 2147483647) {
+            return null;
+        }
+
+        return (int) $value;
+    }
+
+    /**
      * Parse a date from common spreadsheet/document formats or Excel serial integers into YYYY-MM-DD.
      *
      * @return array{value: ?string, problem: ?string}

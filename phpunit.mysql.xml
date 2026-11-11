@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Capstone unit testing on MySQL/MariaDB (Section 4.4.1).
+
+    This configuration connects ONLY to the dedicated local testing database `mr_pride_testing`
+    on the local server (127.0.0.1). Every database setting is forced, so nothing in .env or in the
+    shell environment can point the tests at `mr_pride`, staging or production. The user name and
+    password of the local server are the ones already in .env; no credential is stored here.
+
+    Run:  php vendor/bin/pest -c phpunit.mysql.xml
+
+    The project's normal test configuration (phpunit.xml, in-memory SQLite) is unchanged.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+>
+    <testsuites>
+        <!-- 4.4.1 Unit Testing: select with the pest option "testsuite Unit" (see docs/testing). -->
+        <testsuite name="Unit">
+            <directory>tests/CapstoneMysql/Unit</directory>
+        </testsuite>
+        <!-- 4.4.2 Integration Testing: select with the pest option "testsuite Integration". -->
+        <testsuite name="Integration">
+            <directory>tests/CapstoneMysql/Integration</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
+    <php>
+        <env name="APP_ENV" value="testing" force="true"/>
+        <env name="SKIP_DEVICE_VERIFICATION" value="false" force="true"/>
+        <env name="APP_MAINTENANCE_DRIVER" value="file" force="true"/>
+        <env name="BCRYPT_ROUNDS" value="4" force="true"/>
+        <env name="BROADCAST_CONNECTION" value="null" force="true"/>
+        <env name="CACHE_STORE" value="array" force="true"/>
+        <!-- The dedicated MariaDB testing database, and nothing else. -->
+        <env name="DB_CONNECTION" value="mysql" force="true"/>
+        <env name="DB_HOST" value="127.0.0.1" force="true"/>
+        <env name="DB_PORT" value="3306" force="true"/>
+        <env name="DB_DATABASE" value="mr_pride_testing" force="true"/>
+        <env name="DB_URL" value="" force="true"/>
+        <env name="DB_SOCKET" value="" force="true"/>
+        <env name="MAIL_MAILER" value="array" force="true"/>
+        <env name="INERTIA_SSR_ENABLED" value="false" force="true"/>
+        <!-- Tests never call the real Resend API or redirect mail. -->
+        <env name="RESEND_API_KEY" value="" force="true"/>
+        <env name="RESEND_DEV_REDIRECT_TO" value="" force="true"/>
+        <env name="QUEUE_CONNECTION" value="sync" force="true"/>
+        <env name="SESSION_DRIVER" value="array" force="true"/>
+        <env name="PULSE_ENABLED" value="false" force="true"/>
+        <env name="TELESCOPE_ENABLED" value="false" force="true"/>
+        <env name="NIGHTWATCH_ENABLED" value="false" force="true"/>
+    </php>
+</phpunit>

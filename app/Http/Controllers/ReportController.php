@@ -17,6 +17,7 @@ use App\Services\Inventory\ProductPrioritizer;
 use App\Services\Reports\ReportTableExporter;
 use App\Services\Suppliers\SupplierEvaluator;
 use App\Support\Csv;
+use App\Support\DateNormalizer;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -60,11 +61,12 @@ class ReportController extends Controller
                 $fromDate = $today->copy()->startOfYear();
                 break;
             case 'custom':
-                if ($request->filled('from_date')) {
-                    $fromDate = Carbon::parse($request->input('from_date'))->startOfDay();
+                // A date that cannot be read is ignored (as if it was not given), never a server error.
+                if ($from = DateNormalizer::carbonOrNull($request->input('from_date'))) {
+                    $fromDate = $from->startOfDay();
                 }
-                if ($request->filled('to_date')) {
-                    $toDate = Carbon::parse($request->input('to_date'))->endOfDay();
+                if ($to = DateNormalizer::carbonOrNull($request->input('to_date'))) {
+                    $toDate = $to->endOfDay();
                 }
                 break;
             case 'all_time':
@@ -113,8 +115,12 @@ class ReportController extends Controller
             $quotesQuery->where('quotation_date', '>=', $fromDate)->where('quotation_date', '<=', $toDate);
         }
         $quotationsCount = $quotesQuery->count();
-        $pendingQuotationsCount = (clone $quotesQuery)->where('status', 'Pending')->count();
-        $pendingQuotationsValue = (float) (clone $quotesQuery)->where('status', 'Pending')->sum('grand_total');
+        // Pending = waiting for the administrator: a Draft submitted for approval and not approved yet.
+        // ("Pending" is not a quotation status, so filtering on it always gave zero.)
+        $pendingQuotes = (clone $quotesQuery)->where('status', QuotationStatus::Draft->value)
+            ->whereNotNull('submitted_for_approval_at')->whereNull('approved_at');
+        $pendingQuotationsCount = (clone $pendingQuotes)->count();
+        $pendingQuotationsValue = (float) (clone $pendingQuotes)->sum('grand_total');
         $approvedQuotationsCount = (clone $quotesQuery)->where(fn ($q) => $q->whereNotNull('approved_at')->orWhereIn('status', [QuotationStatus::Sent->value, QuotationStatus::Accepted->value]))->count();
         $convertedQuotationsCount = (clone $quotesQuery)->whereNotNull('converted_to_sale_id')->count();
 

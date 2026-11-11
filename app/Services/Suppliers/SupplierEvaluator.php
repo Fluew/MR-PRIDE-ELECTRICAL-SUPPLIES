@@ -7,6 +7,7 @@ use App\Models\Supplier;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 /**
  * AHP-based Supplier Evaluation. Every score is calculated from recorded transactions only:
@@ -300,7 +301,8 @@ class SupplierEvaluator
     {
         $rows = Delivery::query()
             ->join('purchase_orders', 'purchase_orders.id', '=', 'deliveries.purchase_order_id')
-            ->join('suppliers', 'suppliers.id', '=', 'purchase_orders.supplier_id')
+            // The supplier that delivered (as in the delivery and quality criteria); the order's when not recorded.
+            ->join('suppliers', 'suppliers.id', '=', DB::raw('COALESCE(deliveries.supplier_id, purchase_orders.supplier_id)'))
             ->join('products', 'products.id', '=', 'purchase_orders.product_id')
             ->where('deliveries.team_id', $teamId)
             ->where(fn ($q) => $q->whereNull('deliveries.status')->orWhere('deliveries.status', '!=', 'Cancelled'))
@@ -311,7 +313,7 @@ class SupplierEvaluator
             ->orderBy('deliveries.delivery_date')->orderBy('deliveries.id')
             ->get([
                 'deliveries.purchase_order_id', 'deliveries.delivery_number', 'deliveries.delivery_date', 'deliveries.accepted_quantity',
-                'purchase_orders.po_number', 'purchase_orders.unit_cost', 'purchase_orders.unit_of_measure', 'purchase_orders.supplier_id', 'purchase_orders.product_id',
+                'purchase_orders.po_number', 'purchase_orders.unit_cost', 'purchase_orders.unit_of_measure', 'suppliers.id as supplier_id', 'purchase_orders.product_id',
                 'suppliers.name as supplier_name', 'products.name as product_name', 'products.sku as product_sku',
             ])
             // The same delivery recorded twice counts once (as in the delivery criterion).

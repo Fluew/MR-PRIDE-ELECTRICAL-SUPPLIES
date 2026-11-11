@@ -20,6 +20,8 @@ const props = defineProps<{
     orders: ReceivableOrder[];
     products: { id: number; name: string; sku: string; unit?: string | null; is_active?: boolean }[];
     categories: string[];
+    /** Active suppliers of the team: the supplier that delivered can be changed before confirming. */
+    suppliers?: { id: number; name: string }[];
     /** Correct mode: the confirmed delivery being corrected. */
     delivery?: DeliveryDetail | null;
 }>();
@@ -76,11 +78,27 @@ const filteredOrders = computed(() => {
         || o.lines.some((l) => l.description.toLowerCase().includes(q) || (l.item_sku ?? '').toLowerCase().includes(q)));
 });
 
+// Supplier that delivered: the purchase order's by default. The purchase order itself is not changed.
+const supplierId = ref<number | null>(null);
+const supplierOptions = computed(() => {
+    const list = [...(props.suppliers ?? [])];
+    const own = order.value?.supplier;
+    if (own && !list.some((s) => s.id === own.id)) list.unshift(own);
+    return list;
+});
+const supplierChanged = computed(() => !!order.value?.supplier && supplierId.value != null && supplierId.value !== order.value.supplier.id);
+const supplierProblem = computed(() => {
+    if (isCorrection.value || !order.value) return null;
+    if (supplierId.value == null) return supplierOptions.value.length ? 'Select the supplier that delivered.' : null;
+    return supplierOptions.value.some((s) => s.id === supplierId.value) ? null : 'Select a registered supplier.';
+});
+
 const blankInspection = { remarks: '', category: '', overReason: '', productAction: '' as const, productId: null, newCategory: 'General', inspected: false };
 
 const selectOrder = (poNumber: string) => {
     selectedPo.value = poNumber;
     const o = props.orders.find((x) => x.po_number === poNumber);
+    supplierId.value = o?.supplier?.id ?? null;
     rows.value = (o?.lines ?? []).map((l) => ({
         key: l.id, item_sku: l.item_sku, description: l.description, ordered: l.quantity, previously_received: l.previously_received, remaining: l.remaining,
         unit_cost: l.unit_cost, unit_of_measure: l.unit_of_measure, extended_cost: l.extended_cost, product: l.product,
@@ -96,6 +114,7 @@ const reset = () => {
     form.submission_key = crypto.randomUUID();
     search.value = '';
     selectedPo.value = null;
+    supplierId.value = null;
     rows.value = [];
     if (props.delivery) {
         const d = props.delivery;
@@ -160,7 +179,7 @@ const receivedRows = computed(() => rows.value.filter((r) => n(r.received) > 0))
 const canSubmit = computed(() => {
     if (form.processing) return false;
     if (isCorrection.value) return !!form.reason.trim() && rows.value.every((r) => rowProblems(r).length === 0);
-    return !!order.value && receivedRows.value.length > 0 && rows.value.every((r) => rowProblems(r).length === 0);
+    return !!order.value && !supplierProblem.value && receivedRows.value.length > 0 && rows.value.every((r) => rowProblems(r).length === 0);
 });
 
 // Server messages: "lines.2.accepted_quantity" → row 2.
@@ -194,6 +213,7 @@ const submit = () => {
     }
     form.transform((d) => ({
         po_number: selectedPo.value,
+        supplier_id: supplierId.value,
         delivery_date: d.delivery_date,
         supplier_document_number: d.supplier_document_number.trim() || null,
         notes: d.notes.trim() || null,
@@ -260,7 +280,7 @@ const minDate = computed(() => (isCorrection.value ? props.delivery?.order_date 
                     </div>
                     <div v-else class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5">
                         <span class="font-mono text-sm font-semibold">{{ order.po_number }}</span>
-                        <button type="button" class="text-xs font-medium text-brand hover:underline" @click="selectedPo = null; rows = []">Change purchase order</button>
+                        <button type="button" class="text-xs font-medium text-brand hover:underline" @click="selectedPo = null; supplierId = null; rows = []">Change purchase order</button>
                     </div>
                 </section>
 
@@ -274,9 +294,33 @@ const minDate = computed(() => (isCorrection.value ? props.delivery?.order_date 
                         <div class="text-xs text-muted-foreground">Order Date</div>
                         <div class="text-sm font-medium">{{ fmtDate(isCorrection ? delivery?.order_date : order?.po_date) }}</div>
                     </div>
-                    <div class="rounded-xl border border-gray-200 px-4 py-3">
+                    <!-- A confirmed delivery keeps its supplier: it is read-only when correcting. -->
+                    <div v-if="isCorrection" class="rounded-xl border border-gray-200 px-4 py-3">
                         <div class="text-xs text-muted-foreground">Supplier Name</div>
-                        <div class="text-sm font-medium">{{ (isCorrection ? delivery?.supplier : order?.supplier?.name) ?? '—' }}</div>
+                        <div class="text-sm font-medium" data-test="supplier-readonly">{{ delivery?.supplier ?? '—' }}</div>
+                    </div>
+                    <div v-else>
+                        <div class="relative">
+                            <select
+                                id="ib-supplier"
+                                v-model="supplierId"
+                                required
+                                class="peer block w-full rounded-xl border bg-white px-3.5 pt-5 pb-2 text-sm font-medium text-gray-900 focus:border-[#4b5320] focus:ring-1 focus:ring-[#4b5320] focus:outline-none"
+                                :class="supplierProblem || serverErrors.supplier_id ? 'border-red-500' : 'border-gray-200'"
+                                :aria-invalid="!!(supplierProblem || serverErrors.supplier_id)"
+                                aria-describedby="ib-supplier-help"
+                                data-test="supplier-select"
+                            >
+                                <option :value="null" disabled>Select a supplier</option>
+                                <option v-for="s in supplierOptions" :key="s.id" :value="s.id">{{ s.name }}</option>
+                            </select>
+                            <label for="ib-supplier" class="pointer-events-none absolute top-3.5 left-3.5 origin-[0] -translate-y-2.5 scale-75 transform text-xs font-semibold text-gray-500 duration-200 peer-focus:text-[#4b5320]">Supplier Name</label>
+                        </div>
+                        <p id="ib-supplier-help" class="mt-1 text-[11px]" :class="supplierProblem ? 'text-rose-600' : 'text-muted-foreground'" data-test="supplier-help">
+                            <template v-if="supplierProblem">{{ supplierProblem }}</template>
+                            <template v-else-if="supplierChanged">Purchase order supplier: {{ order?.supplier?.name }}. The purchase order is not changed.</template>
+                            <template v-else>From the purchase order. Change it only if another supplier delivered.</template>
+                        </p>
                     </div>
                     <div>
                         <label class="field-label" for="ib-date">Delivery date</label>
