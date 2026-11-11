@@ -1,0 +1,67 @@
+<IfModule mod_rewrite.c>
+    <IfModule mod_negotiation.c>
+        Options -MultiViews -Indexes
+    </IfModule>
+
+    RewriteEngine On
+
+    # Handle Authorization Header
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # Handle X-XSRF-Token Header
+    RewriteCond %{HTTP:x-xsrf-token} .
+    RewriteRule .* - [E=HTTP_X_XSRF_TOKEN:%{HTTP:X-XSRF-Token}]
+
+    # Redirect Trailing Slashes If Not A Folder...
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} (.+)/$
+    RewriteRule ^ %1 [L,R=301]
+
+    # Serve the gzip copy written at build time (vite.config.ts precompressAssets) when the
+    # browser accepts it. no-gzip stops mod_deflate, if enabled, compressing it a second time.
+    # (Only with mod_headers, which adds the Content-Encoding header the browser needs.)
+    <IfModule mod_headers.c>
+        RewriteCond %{HTTP:Accept-Encoding} gzip
+        RewriteCond %{REQUEST_FILENAME}.gz -f
+        RewriteRule ^(build/assets/.+\.(?:js|css|svg))$ $1.gz [E=no-gzip:1,L]
+    </IfModule>
+
+    # Send Requests To Front Controller...
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+# Compress text responses (pages, scripts, styles, JSON) for slower phone connections.
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/css text/javascript application/javascript application/json image/svg+xml
+</IfModule>
+
+# Pre-compressed build files: keep their real type and tell the browser they are gzipped.
+<FilesMatch "\.js\.gz$">
+    ForceType text/javascript
+</FilesMatch>
+<FilesMatch "\.css\.gz$">
+    ForceType text/css
+</FilesMatch>
+<FilesMatch "\.svg\.gz$">
+    ForceType image/svg+xml
+</FilesMatch>
+
+<IfModule mod_headers.c>
+    <FilesMatch "\.(js|css|svg)\.gz$">
+        Header set Content-Encoding gzip
+        Header append Vary Accept-Encoding
+    </FilesMatch>
+
+    # Images and fonts in public/ keep their names when replaced, so cache them for a week only.
+    <FilesMatch "\.(webp|png|jpe?g|gif|svg|ico|woff2?)$">
+        Header set Cache-Control "public, max-age=604800"
+    </FilesMatch>
+
+    # Vite build files have a content hash in their name, so they never change: cache for a year.
+    <If "%{REQUEST_URI} =~ m#/build/assets/#">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </If>
+</IfModule>

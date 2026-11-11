@@ -1,0 +1,322 @@
+@import 'tailwindcss';
+
+@import 'tw-animate-css';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-sans:
+        Instrument Sans, ui-sans-serif, system-ui, sans-serif,
+        'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+        'Noto Color Emoji';
+
+    --radius-lg: var(--radius);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-sm: calc(var(--radius) - 4px);
+
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+
+    --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
+
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+
+    --color-chart-1: var(--chart-1);
+    --color-chart-2: var(--chart-2);
+    --color-chart-3: var(--chart-3);
+    --color-chart-4: var(--chart-4);
+    --color-chart-5: var(--chart-5);
+
+    --color-sidebar: var(--sidebar-background);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-ring: var(--sidebar-ring);
+}
+
+/*
+  The default border color has changed to `currentColor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+    *,
+    ::after,
+    ::before,
+    ::backdrop,
+    ::file-selector-button {
+        border-color: var(--color-gray-200, currentColor);
+    }
+}
+
+@layer utilities {
+    body,
+    html {
+        --font-sans:
+            'Instrument Sans', ui-sans-serif, system-ui, sans-serif,
+            'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+            'Noto Color Emoji';
+    }
+}
+
+:root {
+    --background: hsl(0 0% 100%);
+    --foreground: hsl(0 0% 3.9%);
+    --card: hsl(0 0% 100%);
+    --card-foreground: hsl(0 0% 3.9%);
+    --popover: hsl(0 0% 100%);
+    --popover-foreground: hsl(0 0% 3.9%);
+    --primary: hsl(0 0% 9%);
+    --primary-foreground: hsl(0 0% 98%);
+    --secondary: hsl(0 0% 92.1%);
+    --secondary-foreground: hsl(0 0% 9%);
+    --muted: hsl(0 0% 96.1%);
+    --muted-foreground: hsl(0 0% 45.1%);
+    --accent: hsl(0 0% 96.1%);
+    --accent-foreground: hsl(0 0% 9%);
+    --destructive: hsl(0 84.2% 60.2%);
+    --destructive-foreground: hsl(0 0% 98%);
+    --border: hsl(0 0% 92.8%);
+    --input: hsl(0 0% 89.8%);
+    --ring: hsl(0 0% 3.9%);
+    --chart-1: hsl(12 76% 61%);
+    --chart-2: hsl(173 58% 39%);
+    --chart-3: hsl(197 37% 24%);
+    --chart-4: hsl(43 74% 66%);
+    --chart-5: hsl(27 87% 67%);
+    --radius: 0.5rem;
+    --sidebar-background: hsl(69.4 44.3% 22.5%);
+    --sidebar-foreground: hsl(0 0% 100%);
+    --sidebar-primary: hsl(0 0% 100%);
+    --sidebar-primary-foreground: hsl(69.4 44.3% 22.5%);
+    --sidebar-accent: hsl(69.4 44.3% 28%);
+    --sidebar-accent-foreground: hsl(0 0% 100%);
+    --sidebar-border: hsl(69.4 44.3% 15%);
+    --sidebar-ring: hsl(69.4 44.3% 35%);
+    --sidebar: hsl(69.4 44.3% 22.5%);
+}
+
+.dark {
+    --background: hsl(0 0% 3.9%);
+    --foreground: hsl(0 0% 98%);
+    --card: hsl(0 0% 3.9%);
+    --card-foreground: hsl(0 0% 98%);
+    --popover: hsl(0 0% 3.9%);
+    --popover-foreground: hsl(0 0% 98%);
+    --primary: hsl(0 0% 98%);
+    --primary-foreground: hsl(0 0% 9%);
+    --secondary: hsl(0 0% 14.9%);
+    --secondary-foreground: hsl(0 0% 98%);
+    --muted: hsl(0 0% 16.08%);
+    --muted-foreground: hsl(0 0% 63.9%);
+    --accent: hsl(0 0% 14.9%);
+    --accent-foreground: hsl(0 0% 98%);
+    --destructive: hsl(0 84% 60%);
+    --destructive-foreground: hsl(0 0% 98%);
+    --border: hsl(0 0% 14.9%);
+    --input: hsl(0 0% 14.9%);
+    --ring: hsl(0 0% 83.1%);
+    --chart-1: hsl(220 70% 50%);
+    --chart-2: hsl(160 60% 45%);
+    --chart-3: hsl(30 80% 55%);
+    --chart-4: hsl(280 65% 60%);
+    --chart-5: hsl(340 75% 55%);
+    --sidebar-background: hsl(0 0% 7%);
+    --sidebar-foreground: hsl(0 0% 95.9%);
+    --sidebar-primary: hsl(360, 100%, 100%);
+    --sidebar-primary-foreground: hsl(0 0% 100%);
+    --sidebar-accent: hsl(0 0% 15.9%);
+    --sidebar-accent-foreground: hsl(240 4.8% 95.9%);
+    --sidebar-border: hsl(0 0% 15.9%);
+    --sidebar-ring: hsl(217.2 91.2% 59.8%);
+    --sidebar: hsl(240 5.9% 10%);
+}
+
+@layer base {
+    * {
+        @apply border-border outline-ring/50;
+    }
+    body {
+        @apply bg-background text-foreground;
+    }
+}
+
+/* Shared MR-Pride design language */
+@theme {
+    --color-brand: #4b5320;
+    --color-brand-gold: #f8b803;
+}
+/*
+ * Visual rules for the whole app (spec 3.1): one primary action per section, quiet secondary
+ * actions, borders instead of shadows, one radius (rounded-xl / rounded-lg inside), two font
+ * weights (medium, semibold), strong colour only for real states (errors, warnings, stock).
+ */
+@layer components {
+    .brand-button {
+        @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3b4219] disabled:pointer-events-none disabled:opacity-50;
+    }
+    .secondary-button {
+        @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50;
+    }
+    .section-eyebrow {
+        @apply text-xs font-semibold tracking-wide text-brand;
+    }
+    /* Page header: title, one short line of context, actions on the right (stacked on small screens). */
+    .page-header {
+        @apply flex flex-col items-start gap-4 lg:flex-row lg:items-center lg:justify-between;
+    }
+    .page-actions {
+        @apply flex w-full flex-wrap items-center gap-2.5 lg:w-auto lg:justify-end;
+    }
+    .page-title {
+        @apply text-2xl font-semibold tracking-tight text-gray-900 dark:text-white;
+    }
+    .page-subtitle {
+        @apply mt-1 text-sm text-gray-500 dark:text-gray-400;
+    }
+    /* A heading inside a page (a settings section, a maintenance view), one step below the page title. */
+    .section-title {
+        @apply text-lg font-semibold tracking-tight text-gray-900 dark:text-white;
+    }
+    .section-subtitle {
+        @apply mt-1 text-sm text-gray-500 dark:text-gray-400;
+    }
+    /* The one card style: a plain bordered surface. Use it only to group related content. */
+    .panel {
+        @apply rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950;
+    }
+    .skip-link {
+        @apply fixed top-3 left-3 z-[100] -translate-y-24 rounded-lg bg-brand-gold px-5 py-3 text-sm font-bold text-gray-900 shadow-lg focus:translate-y-0;
+    }
+    .field-control {
+        @apply min-h-10 w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-sm text-gray-900 transition-colors outline-none placeholder:text-gray-400 focus:border-brand focus:ring-2 focus:ring-brand/15 disabled:cursor-not-allowed disabled:opacity-60;
+    }
+    .field-label {
+        @apply mb-1.5 block text-sm font-medium text-gray-700;
+    }
+    .workspace-page {
+        @apply mx-auto flex w-full max-w-[1600px] min-w-0 flex-1 flex-col gap-6 p-4 sm:p-6 lg:p-8;
+    }
+    /* Every module title looks the same, whatever classes the page gives it (section titles excepted). */
+    .workspace-page h1:not(.section-title) {
+        @apply text-2xl font-semibold tracking-tight;
+    }
+    /* Data tables: one comfortable cell padding everywhere (pages set it only for compact tables). */
+    .workspace-page :where(table) {
+        @apply text-sm;
+    }
+    .workspace-page :where(thead) {
+        @apply bg-gray-50/80;
+    }
+    .workspace-page :where(th) {
+        @apply px-4 py-3 text-xs font-medium text-gray-500;
+    }
+    .workspace-page :where(td) {
+        @apply px-4 py-3;
+    }
+    .workspace-page :where(tbody tr) {
+        @apply transition-colors hover:bg-gray-50/70;
+    }
+}
+
+@layer base {
+    :where(
+        a,
+        button,
+        input,
+        select,
+        textarea,
+        summary,
+        [tabindex]
+    ):focus-visible {
+        outline: 2px solid #4b5320;
+        outline-offset: 3px;
+    }
+    button:not(:disabled),
+    summary {
+        cursor: pointer;
+    }
+    button:disabled {
+        cursor: not-allowed;
+    }
+    input,
+    select,
+    textarea {
+        scroll-margin-block: 7rem;
+    }
+    ::selection {
+        background: #f8b80355;
+    }
+    /* Hide browser-native password reveal and clear icons (Edge / IE / WebKit) so only the single custom Show/Hide icon is rendered */
+    input::-ms-reveal {
+        display: none !important;
+        width: 0 !important;
+        height: 0 !important;
+    }
+    input::-ms-clear {
+        display: none !important;
+        width: 0 !important;
+        height: 0 !important;
+    }
+    input::-webkit-contacts-auto-fill-button {
+        visibility: hidden !important;
+        display: none !important;
+        pointer-events: none !important;
+    }
+    input::-webkit-credentials-auto-fill-button {
+        visibility: hidden !important;
+        display: none !important;
+        pointer-events: none !important;
+    }
+}
+/* Staff pages fade in when the module changes. `backwards` fill drops the animation once it has
+   run, so it never leaves a stacking context behind for dropdowns and dialogs. */
+.page-enter {
+    animation: page-enter 160ms ease-out backwards;
+}
+@keyframes page-enter {
+    from {
+        opacity: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
