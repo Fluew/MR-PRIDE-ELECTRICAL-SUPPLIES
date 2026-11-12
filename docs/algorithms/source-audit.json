@@ -1,0 +1,982 @@
+{
+    "configured_database": "mr_pride",
+    "databases": [
+        {
+            "Database": "information_schema"
+        },
+        {
+            "Database": "inventory_system_v2"
+        },
+        {
+            "Database": "mr_pride"
+        },
+        {
+            "Database": "mysql"
+        },
+        {
+            "Database": "performance_schema"
+        },
+        {
+            "Database": "phpmyadmin"
+        },
+        {
+            "Database": "shawarma_inventory"
+        },
+        {
+            "Database": "test"
+        }
+    ],
+    "teams": [
+        {
+            "id": 1,
+            "name": "MR Pride",
+            "slug": "mr-pride"
+        },
+        {
+            "id": 3,
+            "name": "FICTIONAL ALGORITHM TEST V1",
+            "slug": "electrodesk-fictional-history-v1"
+        }
+    ],
+    "sales_months": [
+        {
+            "team_id": 1,
+            "month": "2020-01",
+            "status": "cancelled",
+            "records": 1
+        },
+        {
+            "team_id": 1,
+            "month": "2020-01",
+            "status": "completed",
+            "records": 3
+        },
+        {
+            "team_id": 1,
+            "month": "2020-02",
+            "status": "cancelled",
+            "records": 1
+        },
+        {
+            "team_id": 1,
+            "month": "2020-02",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 1,
+            "month": "2020-03",
+            "status": "completed",
+            "records": 1
+        },
+        {
+            "team_id": 1,
+            "month": "2020-04",
+            "status": "completed",
+            "records": 3
+        },
+        {
+            "team_id": 1,
+            "month": "2020-05",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 1,
+            "month": "2020-06",
+            "status": "completed",
+            "records": 3
+        },
+        {
+            "team_id": 1,
+            "month": "2020-07",
+            "status": "completed",
+            "records": 3
+        },
+        {
+            "team_id": 1,
+            "month": "2020-08",
+            "status": "completed",
+            "records": 6
+        },
+        {
+            "team_id": 1,
+            "month": "2020-09",
+            "status": "completed",
+            "records": 3
+        },
+        {
+            "team_id": 1,
+            "month": "2020-10",
+            "status": "cancelled",
+            "records": 1
+        },
+        {
+            "team_id": 1,
+            "month": "2020-10",
+            "status": "completed",
+            "records": 3
+        },
+        {
+            "team_id": 1,
+            "month": "2020-11",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 1,
+            "month": "2020-12",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 1,
+            "month": "2021-01",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 1,
+            "month": "2021-02",
+            "status": "completed",
+            "records": 6
+        },
+        {
+            "team_id": 1,
+            "month": "2021-03",
+            "status": "cancelled",
+            "records": 1
+        },
+        {
+            "team_id": 1,
+            "month": "2021-03",
+            "status": "completed",
+            "records": 3
+        },
+        {
+            "team_id": 1,
+            "month": "2021-04",
+            "status": "completed",
+            "records": 7
+        },
+        {
+            "team_id": 1,
+            "month": "2021-05",
+            "status": "completed",
+            "records": 6
+        },
+        {
+            "team_id": 1,
+            "month": "2021-06",
+            "status": "completed",
+            "records": 7
+        },
+        {
+            "team_id": 1,
+            "month": "2021-07",
+            "status": "completed",
+            "records": 6
+        },
+        {
+            "team_id": 1,
+            "month": "2021-08",
+            "status": "completed",
+            "records": 3
+        },
+        {
+            "team_id": 1,
+            "month": "2021-09",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 1,
+            "month": "2021-10",
+            "status": "completed",
+            "records": 6
+        },
+        {
+            "team_id": 1,
+            "month": "2021-11",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 1,
+            "month": "2021-12",
+            "status": "completed",
+            "records": 6
+        },
+        {
+            "team_id": 1,
+            "month": "2022-01",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 1,
+            "month": "2022-02",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 1,
+            "month": "2022-03",
+            "status": "completed",
+            "records": 6
+        },
+        {
+            "team_id": 1,
+            "month": "2022-04",
+            "status": "cancelled",
+            "records": 2
+        },
+        {
+            "team_id": 1,
+            "month": "2022-04",
+            "status": "completed",
+            "records": 6
+        },
+        {
+            "team_id": 1,
+            "month": "2022-05",
+            "status": "completed",
+            "records": 7
+        },
+        {
+            "team_id": 1,
+            "month": "2022-06",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 1,
+            "month": "2022-07",
+            "status": "completed",
+            "records": 3
+        },
+        {
+            "team_id": 1,
+            "month": "2022-08",
+            "status": "completed",
+            "records": 2
+        },
+        {
+            "team_id": 1,
+            "month": "2022-09",
+            "status": "completed",
+            "records": 8
+        },
+        {
+            "team_id": 1,
+            "month": "2022-10",
+            "status": "completed",
+            "records": 6
+        },
+        {
+            "team_id": 1,
+            "month": "2022-11",
+            "status": "cancelled",
+            "records": 1
+        },
+        {
+            "team_id": 1,
+            "month": "2022-11",
+            "status": "completed",
+            "records": 3
+        },
+        {
+            "team_id": 1,
+            "month": "2022-11",
+            "status": "processing",
+            "records": 1
+        },
+        {
+            "team_id": 1,
+            "month": "2026-11",
+            "status": "completed",
+            "records": 2
+        },
+        {
+            "team_id": 1,
+            "month": "2026-11",
+            "status": "pending",
+            "records": 1
+        },
+        {
+            "team_id": 3,
+            "month": "2020-01",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 3,
+            "month": "2020-02",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2020-03",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2020-04",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2020-05",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 3,
+            "month": "2020-06",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2020-07",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2020-08",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2020-09",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 3,
+            "month": "2020-10",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2020-11",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2020-12",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2021-01",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 3,
+            "month": "2021-02",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2021-03",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2021-04",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2021-05",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 3,
+            "month": "2021-06",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2021-07",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2021-08",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2021-09",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 3,
+            "month": "2021-10",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2021-11",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2021-12",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2022-01",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 3,
+            "month": "2022-02",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2022-03",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2022-04",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2022-05",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 3,
+            "month": "2022-06",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2022-07",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2022-08",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2022-09",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 3,
+            "month": "2022-10",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2022-11",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2022-12",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2023-01",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 3,
+            "month": "2023-02",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2023-03",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2023-04",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2023-05",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 3,
+            "month": "2023-06",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2023-07",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2023-08",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2023-09",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 3,
+            "month": "2023-10",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2023-11",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2023-12",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2024-01",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 3,
+            "month": "2024-02",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2024-03",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2024-04",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2024-05",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 3,
+            "month": "2024-06",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2024-07",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2024-08",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2024-09",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 3,
+            "month": "2024-10",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2024-11",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2024-12",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2025-01",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 3,
+            "month": "2025-02",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2025-03",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2025-04",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2025-05",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 3,
+            "month": "2025-06",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2025-07",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2025-08",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2025-09",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 3,
+            "month": "2025-10",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2025-11",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2025-12",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2026-01",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 3,
+            "month": "2026-02",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2026-03",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2026-04",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2026-05",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 3,
+            "month": "2026-06",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2026-07",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2026-08",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2026-09",
+            "status": "completed",
+            "records": 5
+        },
+        {
+            "team_id": 3,
+            "month": "2026-10",
+            "status": "completed",
+            "records": 4
+        },
+        {
+            "team_id": 3,
+            "month": "2026-11",
+            "status": "completed",
+            "records": 4
+        }
+    ],
+    "movement_years": [
+        {
+            "team_id": 1,
+            "year": 2020,
+            "type": "sale_release",
+            "records": 103,
+            "units": "3946"
+        },
+        {
+            "team_id": 1,
+            "year": 2020,
+            "type": "stock_in",
+            "records": 94,
+            "units": "7321"
+        },
+        {
+            "team_id": 1,
+            "year": 2021,
+            "type": "sale_release",
+            "records": 177,
+            "units": "5595"
+        },
+        {
+            "team_id": 1,
+            "year": 2021,
+            "type": "stock_in",
+            "records": 79,
+            "units": "5937"
+        },
+        {
+            "team_id": 1,
+            "year": 2022,
+            "type": "sale_release",
+            "records": 143,
+            "units": "5854"
+        },
+        {
+            "team_id": 1,
+            "year": 2022,
+            "type": "stock_in",
+            "records": 74,
+            "units": "5747"
+        },
+        {
+            "team_id": 1,
+            "year": 2026,
+            "type": "adjustment",
+            "records": 1,
+            "units": "1"
+        },
+        {
+            "team_id": 1,
+            "year": 2026,
+            "type": "sale_release",
+            "records": 1,
+            "units": "20"
+        },
+        {
+            "team_id": 1,
+            "year": 2026,
+            "type": "stock_in",
+            "records": 8,
+            "units": "358"
+        },
+        {
+            "team_id": 3,
+            "year": 2020,
+            "type": "sale_release",
+            "records": 51,
+            "units": "3268"
+        },
+        {
+            "team_id": 3,
+            "year": 2020,
+            "type": "stock_in",
+            "records": 57,
+            "units": "3663"
+        },
+        {
+            "team_id": 3,
+            "year": 2021,
+            "type": "sale_release",
+            "records": 51,
+            "units": "3268"
+        },
+        {
+            "team_id": 3,
+            "year": 2021,
+            "type": "stock_in",
+            "records": 51,
+            "units": "3268"
+        },
+        {
+            "team_id": 3,
+            "year": 2022,
+            "type": "sale_release",
+            "records": 51,
+            "units": "3268"
+        },
+        {
+            "team_id": 3,
+            "year": 2022,
+            "type": "stock_in",
+            "records": 51,
+            "units": "3268"
+        },
+        {
+            "team_id": 3,
+            "year": 2023,
+            "type": "sale_release",
+            "records": 51,
+            "units": "3268"
+        },
+        {
+            "team_id": 3,
+            "year": 2023,
+            "type": "stock_in",
+            "records": 51,
+            "units": "3268"
+        },
+        {
+            "team_id": 3,
+            "year": 2024,
+            "type": "sale_release",
+            "records": 51,
+            "units": "3268"
+        },
+        {
+            "team_id": 3,
+            "year": 2024,
+            "type": "stock_in",
+            "records": 51,
+            "units": "3268"
+        },
+        {
+            "team_id": 3,
+            "year": 2025,
+            "type": "sale_release",
+            "records": 51,
+            "units": "3268"
+        },
+        {
+            "team_id": 3,
+            "year": 2025,
+            "type": "stock_in",
+            "records": 51,
+            "units": "3268"
+        },
+        {
+            "team_id": 3,
+            "year": 2026,
+            "type": "sale_release",
+            "records": 47,
+            "units": "2958"
+        },
+        {
+            "team_id": 3,
+            "year": 2026,
+            "type": "stock_in",
+            "records": 47,
+            "units": "2958"
+        }
+    ],
+    "product_history": [
+        {
+            "team_id": 1,
+            "products": 53,
+            "first_created": "2020-01-02 00:00:00",
+            "last_created": "2026-11-09 13:03:10"
+        },
+        {
+            "team_id": 3,
+            "products": 6,
+            "first_created": "2020-01-01 00:00:00",
+            "last_created": "2020-01-01 00:00:00"
+        }
+    ]
+}
