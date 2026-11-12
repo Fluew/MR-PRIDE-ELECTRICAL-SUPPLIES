@@ -82,6 +82,10 @@ interface Product {
     description?: string;
     supplier_id?: number | null;
     supplier?: Supplier | null;
+    /** Latest price per unit from the usual supplier (or the cheapest other supplier); USD. */
+    supplier_unit_price?: number | null;
+    /** Name of the supplier that price comes from. */
+    supplier_price_from?: string | null;
 }
 
 interface PaginationLink {
@@ -844,7 +848,7 @@ const exportInventory = () => {
             
             <div class="page-actions">
                 <!-- Stock Movements Segmented Group -->
-                <div class="inline-flex items-center h-10 rounded-xl border border-gray-200 bg-white p-1">
+                <div class="inline-flex items-center h-10 panel p-1">
                     <button
                         type="button"
                         @click="openStockInModal()"
@@ -881,7 +885,7 @@ const exportInventory = () => {
                 </div>
 
                 <!-- Export / Import Group -->
-                <div class="inline-flex items-center h-10 rounded-xl border border-gray-200 bg-white p-1">
+                <div class="inline-flex items-center h-10 panel p-1">
                     <GlideSelect
                         :options="exportFormats"
                         :value="exportFormat"
@@ -923,6 +927,17 @@ const exportInventory = () => {
                     </button>
                 </div>
 
+                <!-- Supplier Product Catalog: supplier offers and USD costs (not inventory stock) -->
+                <button
+                    type="button"
+                    @click="router.visit(`/${teamSlug}/inventory/supplier-catalog`)"
+                    class="inline-flex items-center h-10 gap-1.5 px-3 text-xs font-medium rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer"
+                    title="Products offered by suppliers and each supplier's unit cost, before inventory registration"
+                >
+                    <Building2 class="w-3.5 h-3.5 text-gray-500" />
+                    <span>Supplier Catalog</span>
+                </button>
+
                 <!-- Add Product Button (Aligned on the right) -->
                 <SpecularButton
                     variant="brand"
@@ -953,13 +968,13 @@ const exportInventory = () => {
                 class="text-left px-4 py-3 rounded-xl border bg-white transition-colors"
             >
                 <div class="text-xs text-gray-500">{{ card.label }}</div>
-                <div :class="card.value > 0 && card.alert ? card.alert : 'text-gray-900'" class="mt-1 text-2xl font-semibold">{{ card.value }}</div>
+                <div :class="card.value > 0 && card.alert ? card.alert : 'text-gray-900'" class="mt-2 text-2xl font-semibold tracking-tight tabular-nums">{{ card.value }}</div>
             </button>
         </div>
 
         <!-- Search & Filter Controls -->
-        <div class="flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 bg-white p-4">
-            <div class="relative flex-1 min-w-[220px] max-w-md">
+        <div class="flex flex-wrap items-center gap-3 panel p-4">
+            <div class="relative min-w-0 flex-1 basis-full max-w-md sm:basis-auto sm:min-w-[220px]">
                 <Search class="w-4 h-4 text-gray-400 absolute left-3 top-3" />
                 <input v-model="searchQuery" 
                        @input="applyFilters"
@@ -1005,7 +1020,7 @@ const exportInventory = () => {
         <!-- ========================================================================= -->
         <!-- VIEW 1: PRODUCT TABLE CARD -->
         <!-- ========================================================================= -->
-        <div v-if="activeView === 'table'" class="flex-1 rounded-xl bg-white border border-gray-200 p-6 flex flex-col justify-between">
+        <div v-if="activeView === 'table'" class="panel flex-1 p-6 flex flex-col justify-between">
             <div class="overflow-x-auto">
                 <table class="w-full text-left border-collapse">
                     <thead>
@@ -1013,7 +1028,7 @@ const exportInventory = () => {
                             <th class="pb-3 font-semibold">SKU</th>
                             <th class="pb-3 font-semibold">Product Name</th>
                             <th class="pb-3 font-semibold">Category</th>
-                            <th class="pb-3 font-semibold">Unit Price</th>
+                            <th class="pb-3 font-semibold" title="What the supplier charges per unit (latest purchase, order or verified quote)">Supplier Unit Price</th>
                             <th class="pb-3 font-semibold text-center">Stock</th>
                             <th class="pb-3 font-semibold">Reorder Level</th>
                             <th class="pb-3 font-semibold">Status</th>
@@ -1040,7 +1055,11 @@ const exportInventory = () => {
                                     {{ product.category }}
                                 </span>
                             </td>
-                            <td class="py-3.5 text-gray-900 font-medium">{{ product.price === null ? '—' : formatPrice(product.price) }}</td>
+                            <td class="py-3.5">
+                                <div class="text-gray-900 font-medium">{{ product.supplier_unit_price == null ? '—' : formatPrice(product.supplier_unit_price) }}</div>
+                                <div v-if="product.supplier_unit_price != null && product.supplier_price_from && product.supplier_price_from !== product.supplier?.name" class="text-[11px] text-gray-400">from {{ product.supplier_price_from }}</div>
+                                <div class="text-[11px] text-gray-400">Sells at {{ product.price === null ? '—' : formatPrice(product.price) }}</div>
+                            </td>
                             <td class="py-3.5 text-center">
                                 <span class="font-semibold text-gray-900">{{ product.stock }}</span>
                                 <span class="text-xs text-gray-400 ml-1">({{ product.unit || 'pcs' }})</span>
@@ -1105,10 +1124,7 @@ const exportInventory = () => {
                     <template v-for="(link, idx) in products.links" :key="idx">
                         <button v-if="link.url"
                                 @click="router.visit(link.url, { only: ['products', 'filters'] })"
-                                :class="[
-                                    link.active ? 'bg-[#4b5320] text-white font-semibold' : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50',
-                                    'px-3 py-1.5 rounded-lg text-xs transition-colors'
-                                ]"
+                                :class="[ link.active ? 'bg-[#4b5320] text-white font-semibold' : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50', 'px-3 py-1.5 rounded-lg text-xs transition-colors' ]"
                                 v-html="link.label">
                         </button>
                         <span v-else-if="link.label.includes('Previous') || link.label.includes('Next')" 
@@ -1123,7 +1139,7 @@ const exportInventory = () => {
         <!-- ========================================================================= -->
         <!-- VIEW 2: PRODUCT MOVEMENT (AUDIT TRAIL) -->
         <!-- ========================================================================= -->
-        <div v-else-if="activeView === 'history'" class="flex-1 rounded-xl bg-white border border-gray-200 p-6 flex flex-col">
+        <div v-else-if="activeView === 'history'" class="panel flex-1 p-6 flex flex-col">
             <div class="flex items-center justify-between pb-4 mb-4 border-b border-gray-100">
                 <div>
                     <h3 class="text-base font-semibold text-gray-900">Inventory Movement Audit Trail</h3>
@@ -1197,7 +1213,7 @@ const exportInventory = () => {
     <!-- VIEW PRODUCT DETAILS MODAL -->
     <!-- ========================================================================= -->
     <div v-if="showViewModal && selectedProduct" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 overflow-y-auto">
-        <div class="bg-white border border-gray-200 rounded-xl w-full max-w-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in duration-150">
+        <div class="panel w-full max-w-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in duration-150">
             <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                 <div class="flex items-center gap-3">
                     <div class="p-2 bg-[#F8B803]/20 text-[#4b5320] rounded-lg">
@@ -1239,7 +1255,7 @@ const exportInventory = () => {
 
                 <!-- Reorder & Supplier Details -->
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                    <div class="border border-gray-200 rounded-xl p-4 space-y-2 bg-white">
+                    <div class="panel p-4 space-y-2">
                         <h4 class="font-semibold text-gray-900 text-[11px] flex items-center gap-1.5">
                             Replenishment Metrics
                         </h4>
@@ -1257,7 +1273,7 @@ const exportInventory = () => {
                         </div>
                     </div>
 
-                    <div class="border border-gray-200 rounded-xl p-4 space-y-2 bg-white">
+                    <div class="panel p-4 space-y-2">
                         <h4 class="font-semibold text-gray-900 text-[11px] flex items-center gap-1.5">
                             Associated Supplier
                         </h4>
@@ -1292,7 +1308,7 @@ const exportInventory = () => {
                         Loading stock movements...
                     </div>
 
-                    <div v-else-if="productMovements.length > 0" class="border border-gray-200 rounded-xl overflow-hidden max-h-48 overflow-y-auto">
+                    <div v-else-if="productMovements.length > 0" class="border border-gray-200 rounded-xl max-h-48 overflow-auto">
                         <table class="w-full text-left text-xs border-collapse">
                             <thead class="bg-gray-50 text-gray-500 border-b border-gray-200 sticky top-0">
                                 <tr>
@@ -1342,7 +1358,7 @@ const exportInventory = () => {
     <!-- ADD / EDIT PRODUCT MODAL -->
     <!-- ========================================================================= -->
     <div v-if="showAddEditModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 overflow-y-auto">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-xl shadow-xl animate-in fade-in duration-150 my-8">
+        <div class="panel p-6 w-full max-w-xl shadow-xl animate-in fade-in duration-150 my-8">
             <div class="flex justify-between items-center mb-5 pb-3 border-b border-gray-100">
                 <div>
                     <h3 class="text-xl font-semibold text-gray-900">
@@ -1424,7 +1440,7 @@ const exportInventory = () => {
                     <span v-if="formErrors.brand" class="text-rose-600 text-xs mt-1 block">{{ formErrors.brand }}</span>
                 </div>
 
-                <div class="grid grid-cols-3 gap-3">
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <!-- Unit of Measure -->
                     <div class="relative">
                         <input id="prod_unit"
@@ -1474,7 +1490,7 @@ const exportInventory = () => {
                     </div>
                 </div>
 
-                <div class="grid grid-cols-3 gap-3">
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <!-- Initial Stock -->
                     <div v-if="!isEditing" class="relative">
                         <input id="prod_stock"
@@ -1494,7 +1510,7 @@ const exportInventory = () => {
 
                     <!-- Reorder Level -->
                     <div class="relative">
-                        <input id="prod_reorder_level"
+                        <input id="prod_reorder_level" :readonly="isEditing"
                                v-model.number="formProduct.reorder_level" 
                                type="number" 
                                min="0" 
@@ -1511,7 +1527,7 @@ const exportInventory = () => {
 
                     <!-- Reorder Quantity -->
                     <div class="relative">
-                        <input id="prod_reorder_quantity"
+                        <input id="prod_reorder_quantity" :readonly="isEditing"
                                v-model.number="formProduct.reorder_quantity" 
                                type="number" 
                                min="0" 
@@ -1589,7 +1605,7 @@ const exportInventory = () => {
     <!-- STOCK-IN MODAL -->
     <!-- ========================================================================= -->
     <div v-if="showStockInModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 overflow-y-auto">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-lg shadow-xl animate-in fade-in duration-150">
+        <div class="panel p-6 w-full max-w-lg shadow-xl animate-in fade-in duration-150">
             <div class="flex justify-between items-center mb-4 pb-3 border-b border-gray-100">
                 <div class="flex items-center gap-2.5">
                     <div class="p-2 bg-emerald-50 text-emerald-700 rounded-lg">
@@ -1724,7 +1740,7 @@ const exportInventory = () => {
     <!-- STOCK-OUT MODAL -->
     <!-- ========================================================================= -->
     <div v-if="showStockOutModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 overflow-y-auto">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-lg shadow-xl animate-in fade-in duration-150">
+        <div class="panel p-6 w-full max-w-lg shadow-xl animate-in fade-in duration-150">
             <div class="flex justify-between items-center mb-4 pb-3 border-b border-gray-100">
                 <div class="flex items-center gap-2.5">
                     <div class="p-2 bg-amber-50 text-amber-700 rounded-lg">
@@ -1872,7 +1888,7 @@ const exportInventory = () => {
     <!-- STOCK ADJUSTMENT MODAL -->
     <!-- ========================================================================= -->
     <div v-if="showAdjustModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 overflow-y-auto">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-lg shadow-xl animate-in fade-in duration-150">
+        <div class="panel p-6 w-full max-w-lg shadow-xl animate-in fade-in duration-150">
             <div class="flex justify-between items-center mb-4 pb-3 border-b border-gray-100">
                 <div class="flex items-center gap-2.5">
                     <div class="p-2 bg-purple-50 text-purple-700 rounded-lg">
@@ -1984,7 +2000,7 @@ const exportInventory = () => {
     <!-- CONFIRM DELETE / ARCHIVE MODAL -->
     <!-- ========================================================================= -->
     <div v-if="showDeleteModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-md shadow-xl animate-in fade-in duration-150">
+        <div class="panel p-6 w-full max-w-md shadow-xl animate-in fade-in duration-150">
             <div class="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mb-4">
                 <Trash2 class="w-6 h-6" />
             </div>
@@ -2035,7 +2051,7 @@ const exportInventory = () => {
     <!-- ACTION CONFIRMATION MODAL -->
     <!-- ========================================================================= -->
     <div v-if="showConfirmModal" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-md shadow-xl animate-in fade-in duration-150">
+        <div class="panel p-6 w-full max-w-md shadow-xl animate-in fade-in duration-150">
             <div class="w-11 h-11 rounded-full bg-amber-50 text-[#F8B803] flex items-center justify-center mb-4 border border-amber-100">
                 <CheckCircle2 class="w-6 h-6" />
             </div>

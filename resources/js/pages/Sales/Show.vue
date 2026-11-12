@@ -292,11 +292,11 @@ const confirmSendInvoice = () => {
         </div>
 
         <!-- Summary -->
-        <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <div class="panel px-4 py-3"><div class="text-xs text-gray-500">Order total</div><div class="mt-1 text-2xl font-semibold text-gray-900">{{ formatMoney(sale.grand_total) }}</div></div>
-            <div class="panel px-4 py-3"><div class="text-xs text-gray-500">Verified payments</div><div class="mt-1 text-2xl font-semibold text-gray-900">{{ formatMoney(sale.amount_paid) }}</div></div>
-            <div class="panel px-4 py-3"><div class="text-xs text-gray-500">Balance</div><div class="mt-1 text-2xl font-semibold" :class="Number(sale.outstanding_balance) > 0 ? 'text-rose-600' : 'text-gray-900'">{{ formatMoney(sale.outstanding_balance) }}</div></div>
-            <div class="panel px-4 py-3">
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div class="analytics-stat"><div class="text-xs text-gray-500">Order total</div><div class="mt-2 text-2xl font-semibold tracking-tight tabular-nums text-gray-900">{{ formatMoney(sale.grand_total) }}</div></div>
+            <div class="analytics-stat"><div class="text-xs text-gray-500">Verified payments</div><div class="mt-2 text-2xl font-semibold tracking-tight tabular-nums text-gray-900">{{ formatMoney(sale.amount_paid) }}</div></div>
+            <div class="analytics-stat"><div class="text-xs text-gray-500">Balance</div><div class="mt-2 text-2xl font-semibold tracking-tight tabular-nums" :class="Number(sale.outstanding_balance) > 0 ? 'text-rose-600' : 'text-gray-900'">{{ formatMoney(sale.outstanding_balance) }}</div></div>
+            <div class="analytics-stat">
                 <div class="text-xs text-gray-500">Payment terms</div>
                 <div class="mt-1 text-sm font-medium text-gray-900">{{ termsLabel }}</div>
                 <div v-if="sale.terms_approved_by" class="text-[11px] text-gray-500">Approved by {{ sale.terms_approved_by.name }}</div>
@@ -550,16 +550,19 @@ const confirmSendInvoice = () => {
                     <div><label class="field-label" for="p-amount">Amount (USD)</label>
                         <input id="p-amount" v-model.number="paymentForm.amount" type="number" min="0.01" step="0.01" required class="field-control" /></div>
                 </div>
-                <div class="grid grid-cols-2 gap-3">
-                    <div><label class="field-label" for="p-ref">Customer's reference</label>
-                        <input id="p-ref" v-model="paymentForm.reference" maxlength="100" class="field-control" placeholder="e.g. BDO-12345" /></div>
+                <div class="grid grid-cols-2 items-end gap-3">
+                    <!-- Floating label: sits inside the field until it is focused or filled -->
+                    <div class="relative">
+                        <input id="p-ref" v-model="paymentForm.reference" maxlength="100" placeholder=" " title="For example BDO-12345" class="peer field-control pt-5 pb-1.5" />
+                        <label for="p-ref" class="pointer-events-none absolute top-3.5 left-3.5 origin-[0] -translate-y-2.5 scale-75 transform text-sm font-medium text-gray-600 duration-200 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-placeholder-shown:text-gray-500 peer-focus:-translate-y-2.5 peer-focus:scale-75 peer-focus:text-[#4b5320]">Customer's reference</label>
+                    </div>
                     <div><label class="field-label" for="p-date">Payment date</label>
                         <input id="p-date" v-model="paymentForm.payment_date" type="date" :max="today" required class="field-control" /></div>
                 </div>
-                <div><label class="field-label" for="p-proof">Proof of payment (optional)</label>
+                <div><label class="field-label" for="p-proof">Proof of payment</label>
                     <input id="p-proof" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" class="field-control py-1.5 text-xs" @change="paymentForm.proof = ($event.target as HTMLInputElement).files?.[0] ?? null" />
                     <p class="mt-1 text-[11px] text-gray-500">A screenshot is not proof that the money arrived; check the actual transaction when verifying.</p></div>
-                <div><label class="field-label" for="p-remarks">Remarks (optional)</label>
+                <div><label class="field-label" for="p-remarks">Remarks</label>
                     <textarea id="p-remarks" v-model="paymentForm.remarks" rows="2" maxlength="1000" class="field-control"></textarea></div>
             </div>
             <div class="mt-6 flex flex-col-reverse gap-3 border-t border-gray-200 pt-4 sm:flex-row sm:justify-end">

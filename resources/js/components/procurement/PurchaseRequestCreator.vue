@@ -4,7 +4,7 @@
  * forecast shown here come from the backend; the server takes its own snapshot on submit.
  */
 import { useForm, usePage } from '@inertiajs/vue3';
-import { computed, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 export interface PrCandidate {
     /** null = "Product Not Listed": not in the Product Catalog (description and unit given instead). */
@@ -32,7 +32,7 @@ const page = usePage();
 const teamSlug = computed(() => (page.props as any).currentTeam?.slug || (page.props as any).team?.slug || '');
 
 const form = useForm({
-    lines: [] as { product_id: number | null; quantity: number; product_description: string | null; unit?: string; justification: string }[],
+    lines: [] as { product_id: number | null; quantity: number; product_description: string | null; unit?: string; justification: string; supplier_id?: number | null }[],
     draft: false,
     forecast_months: null as number | null,
 });
@@ -59,6 +59,30 @@ watch(
     { immediate: true },
 );
 
+// Supplier Product Catalog options of the listed products: suppliers with their USD costs (simulated,
+// unverified). Shown for information; no supplier is chosen automatically.
+const catalogOptions = ref<Record<number, any[]>>({});
+// Optional preferred supplier per line (kept on the request and pre-filled on the draft purchase
+// order). Sent only when chosen, so a request without one is unchanged.
+const preferredSupplier = ref<Record<number, number | null>>({});
+watch(
+    () => [props.open, props.candidates],
+    async () => {
+        catalogOptions.value = {};
+        preferredSupplier.value = Object.fromEntries(props.candidates.map((_, i) => [i, null]));
+        const ids = props.candidates.map((c) => c.product_id).filter((id): id is number => id !== null);
+        if (!props.open || !ids.length) return;
+        try {
+            const qs = ids.map((id) => `product_ids[]=${id}`).join('&');
+            const res = await fetch(`/${teamSlug.value}/procurement/catalog-prices?${qs}`, { headers: { Accept: 'application/json' } });
+            if (res.ok) catalogOptions.value = (await res.json()).options ?? {};
+        } catch {
+            // Optional information only: the request can be submitted without it.
+        }
+    },
+    { immediate: true },
+);
+
 const err = (i: number, field: string) => (form.errors as Record<string, string>)[`lines.${i}.${field}`];
 
 const submit = (draft: boolean) => {
@@ -69,6 +93,11 @@ const submit = (draft: boolean) => {
         form.setError(`lines.${missing}.product_description` as any, 'Describe the product you need to purchase.');
         return;
     }
+    form.lines.forEach((line, i) => {
+        const supplierId = preferredSupplier.value[i];
+        if (supplierId) line.supplier_id = supplierId;
+        else delete line.supplier_id;
+    });
     form.draft = draft;
     form.post(`/${teamSlug.value}/procurement/requests`, {
         preserveScroll: true,
@@ -122,6 +151,16 @@ const submit = (draft: boolean) => {
                             <textarea :id="`pr-j-${i}`" v-model="line.justification" rows="2" class="field-control w-full" required></textarea>
                             <p v-if="err(i, 'justification')" class="mt-1 text-xs text-rose-600">{{ err(i, 'justification') }}</p>
                             <p v-if="err(i, 'product_id')" class="mt-1 text-xs text-rose-600">{{ err(i, 'product_id') }}</p>
+                        </div>
+                        <div v-if="line.product_id !== null && catalogOptions[line.product_id]?.length" class="sm:col-span-4">
+                            <label class="field-label" :for="`pr-s-${i}`">Preferred supplier (optional) · Supplier Product Catalog costs, USD (simulated, not verified quotations)</label>
+                            <select :id="`pr-s-${i}`" v-model="preferredSupplier[i]" class="field-control w-full">
+                                <option :value="null">No preference (chosen on the purchase order)</option>
+                                <option v-for="o in catalogOptions[line.product_id]" :key="o.id" :value="o.supplier_id" :disabled="!o.supplier_active">
+                                    {{ o.supplier_name }} — ${{ Number(o.unit_cost).toFixed(2) }} / {{ o.pricing_unit }}{{ o.is_lowest && o.offers > 1 ? ' (lowest)' : '' }}{{ o.supplier_active ? '' : ' (inactive)' }}
+                                </option>
+                            </select>
+                            <p v-if="err(i, 'supplier_id')" class="mt-1 text-xs text-rose-600">{{ err(i, 'supplier_id') }}</p>
                         </div>
                     </div>
                 </div>

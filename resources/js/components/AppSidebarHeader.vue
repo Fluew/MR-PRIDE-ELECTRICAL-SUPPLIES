@@ -37,12 +37,12 @@ const section = computed(() => {
 </script>
 <template>
     <header
-        class="sticky top-0 z-30 flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-gray-200 bg-white/95 px-4 backdrop-blur-xl sm:px-6"
+        class="sticky top-0 z-30 flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-gray-200/80 bg-white/95 px-4 backdrop-blur-sm sm:px-6 lg:px-8"
     >
         <div class="flex min-w-0 items-center gap-3">
             <SidebarTrigger
                 aria-label="Toggle workspace navigation"
-                class="size-9 rounded-lg"
+                class="size-10 rounded-xl text-gray-600 hover:bg-gray-100"
             /><span aria-hidden="true" class="h-5 w-px bg-gray-200"></span
             ><Breadcrumbs
                 v-if="breadcrumbs.length"
@@ -53,10 +53,10 @@ const section = computed(() => {
                 >{{ section }}</span
             >
         </div>
-        <div class="flex items-center gap-2 sm:gap-4">
+        <div class="flex shrink-0 items-center gap-1 sm:gap-3">
             <CurrencyToggle v-if="page.props.currency" />
             <NotificationBell v-if="page.props.currentTeam" />
-            <span class="hidden text-xs font-medium text-gray-500 lg:block">{{
+            <span class="hidden max-w-40 truncate text-xs font-medium text-gray-500 xl:block">{{
                 page.props.currentTeam?.name ?? 'MR-Pride'
             }}</span
             ><Link

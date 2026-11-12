@@ -87,6 +87,8 @@ interface ProductItem {
     price: number;
     stock: number;
     reorder_level: number;
+    min_stock?: number | null;
+    status?: string | null;
 }
 
 interface SupplierItem {
@@ -366,6 +368,12 @@ const pickedUnitChoice = ref('');
 const pickerFocus = ref<'' | 'product' | 'unit'>('');
 const pickerErrors = ref<{ product?: string; description?: string; quantity?: string; unit?: string }>({});
 const prCandidates = ref<PrCandidate[]>([]);
+
+// New request product list: every product at or below its reorder level (out of stock or low
+// stock) comes first; same threshold as Inventory (reorder level, else minimum stock, else 10).
+const reorderThreshold = (p: ProductItem) => (p.reorder_level > 0 ? p.reorder_level : Number(p.min_stock) > 0 ? Number(p.min_stock) : 10);
+const reorderProducts = computed(() => props.products.filter((p) => p.stock <= reorderThreshold(p)).sort((a, b) => a.stock - b.stock || a.name.localeCompare(b.name)));
+const otherProducts = computed(() => props.products.filter((p) => p.stock > reorderThreshold(p)));
 const showPrCreator = ref(false);
 const isUnlisted = computed(() => pickedProductId.value === UNLISTED);
 const pickedProduct = computed(() => (typeof pickedProductId.value === 'number' ? props.products.find((x) => x.id === pickedProductId.value) ?? null : null));
@@ -574,12 +582,7 @@ const confirmDelete = () => {
             <button
                 type="button"
                 @click="switchTab('purchase_orders')"
-                :class="[
-                    'flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer whitespace-nowrap',
-                    activeTab === 'purchase_orders'
-                        ? 'bg-gray-100 text-gray-900'
-                        : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
-                ]"
+                :class="[ 'flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer whitespace-nowrap', activeTab === 'purchase_orders' ? 'bg-gray-100 text-gray-900' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50' ]"
             >
                 <ShoppingCart class="w-4 h-4" />
                 <span>Purchase Orders</span>
@@ -594,12 +597,7 @@ const confirmDelete = () => {
             <button
                 type="button"
                 @click="switchTab('requests')"
-                :class="[
-                    'flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer whitespace-nowrap',
-                    activeTab === 'requests'
-                        ? 'bg-gray-100 text-gray-900'
-                        : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
-                ]"
+                :class="[ 'flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer whitespace-nowrap', activeTab === 'requests' ? 'bg-gray-100 text-gray-900' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50' ]"
             >
                 <Package class="w-4 h-4" />
                 <span>Purchase Requests</span>
@@ -611,7 +609,7 @@ const confirmDelete = () => {
 
         <!-- Metrics Cards Section -->
         <div v-if="activeTab === 'purchase_orders'" class="grid grid-cols-2 gap-3">
-            <div class="bg-white border border-gray-200 rounded-xl px-4 py-3">
+            <div class="analytics-stat">
                 <div class="flex items-center justify-between text-gray-500 text-xs font-semibold mb-1">
                     <span>Total Purchase Orders</span>
                     <ShoppingCart class="w-4 h-4 text-blue-500" />
@@ -620,7 +618,7 @@ const confirmDelete = () => {
                 <div class="text-xs text-gray-500 mt-1">Issued vendor POs</div>
             </div>
 
-            <div class="bg-white border border-gray-200 rounded-xl px-4 py-3">
+            <div class="analytics-stat">
                 <div class="flex items-center justify-between text-gray-500 text-xs font-semibold mb-1">
                     <span>Total PO Amount</span>
                     <Receipt class="w-4 h-4 text-[#F8B803]" />
@@ -630,8 +628,8 @@ const confirmDelete = () => {
             </div>
         </div>
 
-        <div v-else class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <div class="bg-white border border-gray-200 rounded-xl px-4 py-3">
+        <div v-else class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div class="analytics-stat">
                 <div class="flex items-center justify-between text-gray-500 text-xs font-semibold mb-1">
                     <span>Total Requests</span>
                     <Package class="w-4 h-4 text-gray-400" />
@@ -640,7 +638,7 @@ const confirmDelete = () => {
                 <div class="text-xs text-gray-500 mt-1">All lifecycle stages</div>
             </div>
 
-            <div class="bg-white border border-gray-200 rounded-xl px-4 py-3">
+            <div class="analytics-stat">
                 <div class="flex items-center justify-between text-gray-500 text-xs font-semibold mb-1">
                     <span>Pending approval</span>
                     <Clock class="w-4 h-4 text-blue-500" />
@@ -649,7 +647,7 @@ const confirmDelete = () => {
                 <div class="text-xs text-gray-500 mt-1">Waiting for an administrator</div>
             </div>
 
-            <div class="bg-white border border-gray-200 rounded-xl px-4 py-3">
+            <div class="analytics-stat">
                 <div class="flex items-center justify-between text-gray-500 text-xs font-semibold mb-1">
                     <span>Approved</span>
                     <Truck class="w-4 h-4 text-[#F8B803]" />
@@ -658,7 +656,7 @@ const confirmDelete = () => {
                 <div class="text-xs text-gray-500 mt-1">Ready for a purchase order</div>
             </div>
 
-            <div class="bg-white border border-gray-200 rounded-xl px-4 py-3">
+            <div class="analytics-stat">
                 <div class="flex items-center justify-between text-gray-500 text-xs font-semibold mb-1">
                     <span>Converted</span>
                     <CheckCircle2 class="w-4 h-4 text-emerald-500" />
@@ -669,7 +667,7 @@ const confirmDelete = () => {
         </div>
 
         <!-- Search & Filters Bar (Beside search bar) -->
-        <div class="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-gray-200">
+        <div class="panel flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 p-4">
             <!-- Search Bar -->
             <div class="relative flex-1 max-w-md">
                 <Search class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -746,7 +744,7 @@ const confirmDelete = () => {
         <!-- ======================================================== -->
         <!-- TAB 2: PURCHASE ORDERS TABLE -->
         <!-- ======================================================== -->
-        <div v-if="activeTab === 'purchase_orders'" class="rounded-xl border border-gray-200 bg-white overflow-hidden flex flex-col">
+        <div v-if="activeTab === 'purchase_orders'" class="panel overflow-hidden flex flex-col">
             <div class="overflow-x-auto">
                 <table class="w-full text-left text-sm text-gray-600">
                     <thead class="bg-gray-50 text-xs text-gray-500 border-b border-gray-200">
@@ -813,11 +811,7 @@ const confirmDelete = () => {
                         :disabled="!link.url || link.active"
                         @click="link.url && router.visit(link.url, { preserveScroll: true })"
                         v-html="link.label"
-                        :class="[
-                            'px-3 py-1 text-xs rounded-lg border transition-colors',
-                            link.active ? 'bg-[#F8B803] text-gray-900 border-[#F8B803] font-semibold' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50',
-                            !link.url ? 'opacity-50 cursor-not-allowed' : ''
-                        ]"
+                        :class="[ 'px-3 py-1 text-xs rounded-lg border transition-colors', link.active ? 'bg-[#F8B803] text-gray-900 border-[#F8B803] font-semibold' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50', !link.url ? 'opacity-50 cursor-not-allowed' : '' ]"
                     />
                 </div>
             </div>
@@ -826,7 +820,7 @@ const confirmDelete = () => {
         <!-- ======================================================== -->
         <!-- TAB 3: PURCHASE REQUESTS TABLE -->
         <!-- ======================================================== -->
-        <div v-else class="rounded-xl border border-gray-200 bg-white overflow-hidden flex flex-col">
+        <div v-else class="panel overflow-hidden flex flex-col">
             <div class="overflow-x-auto">
                 <table class="w-full text-left text-sm text-gray-600">
                     <thead class="bg-gray-50 text-xs text-gray-500 border-b border-gray-200">
@@ -909,11 +903,7 @@ const confirmDelete = () => {
                         :disabled="!link.url || link.active"
                         @click="link.url && router.visit(link.url, { preserveScroll: true })"
                         v-html="link.label"
-                        :class="[
-                            'px-3 py-1 text-xs rounded-lg border transition-colors',
-                            link.active ? 'bg-[#F8B803] text-white border-[#F8B803] font-semibold' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50',
-                            !link.url ? 'opacity-50 cursor-not-allowed' : ''
-                        ]"
+                        :class="[ 'px-3 py-1 text-xs rounded-lg border transition-colors', link.active ? 'bg-[#F8B803] text-white border-[#F8B803] font-semibold' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50', !link.url ? 'opacity-50 cursor-not-allowed' : '' ]"
                     />
                 </div>
             </div>
@@ -924,7 +914,7 @@ const confirmDelete = () => {
     <!-- MODAL: IMPORT PURCHASE ORDERS CSV -->
     <!-- ======================================================== -->
     <div v-if="showPoImportModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full shadow-xl max-h-[90vh] overflow-y-auto" :class="poDocumentFile ? 'max-w-5xl' : 'max-w-2xl'">
+        <div class="panel p-6 w-full shadow-xl max-h-[90vh] overflow-y-auto" :class="poDocumentFile ? 'max-w-5xl' : 'max-w-2xl'">
             <div class="flex justify-between items-center mb-4 border-b border-gray-100 pb-3">
                 <div>
                     <h3 class="text-xl font-semibold text-gray-900">Import Purchase Orders</h3>
@@ -989,7 +979,7 @@ const confirmDelete = () => {
                 </div>
 
                 <!-- Preview Table -->
-                <div v-if="poCsvValidationResult.valid_rows?.length" class="max-h-60 overflow-y-auto border border-gray-200 rounded-xl">
+                <div v-if="poCsvValidationResult.valid_rows?.length" class="max-h-60 overflow-auto border border-gray-200 rounded-xl">
                     <table class="w-full text-left text-xs text-gray-600">
                         <thead class="bg-gray-50 font-semibold text-gray-700 border-b border-gray-200 sticky top-0">
                             <tr>
@@ -1048,7 +1038,7 @@ const confirmDelete = () => {
     <!-- MODAL: DELETE PURCHASE ORDER -->
     <!-- ======================================================== -->
     <div v-if="showDeletePoModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-md shadow-xl">
+        <div class="panel p-6 w-full max-w-md shadow-xl">
             <h3 class="text-xl font-semibold text-gray-900 mb-2">Delete Purchase Order</h3>
             <p class="text-gray-600 text-sm mb-2">
                 Move purchase order <span class="font-semibold text-gray-900">{{ selectedPo?.po_number }}</span> to the Recycle Bin?
@@ -1094,7 +1084,7 @@ const confirmDelete = () => {
     <!-- MODAL: DELETE PURCHASE REQUEST -->
     <!-- ======================================================== -->
     <div v-if="showDeleteModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-md shadow-xl" role="dialog" aria-modal="true" aria-labelledby="delete-pr-title">
+        <div class="panel p-6 w-full max-w-md shadow-xl" role="dialog" aria-modal="true" aria-labelledby="delete-pr-title">
             <h3 id="delete-pr-title" class="text-xl font-semibold text-gray-900 mb-2">Delete Purchase Request?</h3>
             <p class="text-gray-600 text-sm mb-4">
                 Are you sure you want to delete this purchase request? This action cannot be undone.
@@ -1130,7 +1120,7 @@ const confirmDelete = () => {
     <!-- MODAL: ACTION CONFIRMATION -->
     <!-- ======================================================== -->
     <div v-if="showConfirmModal" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-md shadow-xl animate-in fade-in duration-150">
+        <div class="panel p-6 w-full max-w-md shadow-xl animate-in fade-in duration-150">
             <div class="w-11 h-11 rounded-full bg-amber-50 text-[#F8B803] flex items-center justify-center mb-4 border border-amber-100">
                 <CheckCircle2 class="w-6 h-6" />
             </div>
@@ -1172,7 +1162,7 @@ const confirmDelete = () => {
     </div>
     <!-- Workflow: new request product picker → request creator -->
     <div v-if="showProductPicker" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" @click.self="showProductPicker = false">
-        <div class="w-full max-w-md rounded-xl border border-gray-200 bg-white p-6" role="dialog" aria-modal="true" aria-labelledby="pick-title">
+        <div class="w-full max-w-md panel p-6" role="dialog" aria-modal="true" aria-labelledby="pick-title">
             <h3 id="pick-title" class="text-base font-semibold text-gray-900">New purchase request</h3>
             <p class="mb-3 text-xs text-gray-500">Tip: Reports &amp; Analytics → AHP Product Prioritization lists the products the system recommends reordering.</p>
             <form class="space-y-3" novalidate @submit.prevent="continueNewRequest">
@@ -1184,7 +1174,12 @@ const confirmDelete = () => {
                                 :aria-invalid="!!(pickerErrors.product || missingUnitMessage)" :aria-describedby="pickerErrors.product || missingUnitMessage ? 'pick-product-error' : undefined"
                                 @focus="pickerFocus = 'product'" @blur="pickerFocus = ''" @change="pickerErrors.product = undefined">
                             <option :value="null" disabled>Select Product</option>
-                            <option v-for="p in products" :key="p.id" :value="p.id" class="text-gray-900">{{ p.name }} ({{ p.sku }}) · stock {{ p.stock }}</option>
+                            <optgroup v-if="reorderProducts.length" :label="`Needs reorder: out of stock or low stock (${reorderProducts.length})`">
+                                <option v-for="p in reorderProducts" :key="p.id" :value="p.id" class="text-gray-900">{{ p.name }} ({{ p.sku }}) · {{ p.stock <= 0 ? 'out of stock' : `low stock ${p.stock}` }}</option>
+                            </optgroup>
+                            <optgroup v-if="otherProducts.length" label="Other products">
+                                <option v-for="p in otherProducts" :key="p.id" :value="p.id" class="text-gray-900">{{ p.name }} ({{ p.sku }}) · stock {{ p.stock }}</option>
+                            </optgroup>
                             <option :value="UNLISTED" class="text-gray-900">Product Not Listed</option>
                         </select>
                         <label for="pick-product" :class="[floatLabel, pickedProductId !== null || pickerFocus === 'product' ? floatUp : 'text-gray-500']">Select Product</label>
@@ -1247,7 +1242,7 @@ const confirmDelete = () => {
 
     <!-- Workflow: admin review -->
     <div v-if="reviewing" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" @click.self="reviewing = null">
-        <div class="w-full max-w-lg rounded-xl border border-gray-200 bg-white p-6" role="dialog" aria-modal="true" aria-labelledby="review-title">
+        <div class="w-full max-w-lg panel p-6" role="dialog" aria-modal="true" aria-labelledby="review-title">
             <h3 id="review-title" class="text-base font-semibold text-gray-900">Review {{ reviewing.request_number }}</h3>
             <dl class="my-3 grid grid-cols-2 gap-2 text-sm">
                 <div><dt class="text-xs text-gray-500">Product</dt><dd>{{ reviewing.product?.name ?? (reviewing.product_description ? 'Not listed in the Product Catalog' : '—') }}</dd></div>

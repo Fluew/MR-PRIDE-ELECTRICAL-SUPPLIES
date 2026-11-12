@@ -9,6 +9,7 @@ use App\Models\Team;
 use App\Services\AuditLogger;
 use App\Services\Inventory\InventoryExporter;
 use App\Services\Inventory\SkuGenerator;
+use App\Services\Procurement\SupplierCosts;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -101,6 +102,18 @@ class InventoryController extends Controller
         $products = $this->productListQuery($team->id, $search, $category, $status)
             ->paginate(10)
             ->withQueryString();
+
+        // Supplier unit price per listed product: the latest price from its usual supplier; when
+        // that supplier has none, the lowest price recorded from any other supplier.
+        $pageProducts = $products->getCollection();
+        $costs = $pageProducts->isEmpty() ? collect() : app(SupplierCosts::class)->latest($team->id, $pageProducts->pluck('id')->all());
+        $supplierNames = Supplier::where('team_id', $team->id)->whereIn('id', $costs->pluck('supplier_id')->unique()->all())->pluck('name', 'id');
+        $pageProducts->each(function (Product $p) use ($costs, $supplierNames) {
+            $cost = $p->supplier_id ? $costs->get($p->id.':'.$p->supplier_id) : null;
+            $cost ??= $costs->where('product_id', $p->id)->sortBy('unit_cost')->first();
+            $p->setAttribute('supplier_unit_price', $cost['unit_cost'] ?? null);
+            $p->setAttribute('supplier_price_from', $cost ? ($supplierNames[$cost['supplier_id']] ?? null) : null);
+        });
 
         // Calculate inventory summary counts in a single aggregate query (same products as the list)
         $counts = Product::where('team_id', $team->id)
@@ -330,8 +343,8 @@ class InventoryController extends Controller
             'supplier_id' => ['nullable', 'exists:suppliers,id'],
         ]);
 
-        $reorderLevel = (int) ($validated['reorder_level'] ?? 10);
-        $reorderQty = (int) ($validated['reorder_quantity'] ?? 50);
+        $reorderLevel = (int) $product->reorder_level;
+        $reorderQty = (int) $product->reorder_quantity;
 
         $product->update([
             'name' => trim($validated['name']),

@@ -8,6 +8,7 @@ use App\Models\PurchaseRequest;
 use App\Models\Supplier;
 use App\Models\Team;
 use App\Services\Forecast\SmaForecaster;
+use App\Services\Inventory\SupplierCatalog\SupplierCatalogQuery;
 use App\Services\Procurement\ProcurementWorkflow;
 use App\Services\Suppliers\SupplierEvaluator;
 use Illuminate\Database\Eloquent\Model;
@@ -179,6 +180,10 @@ class ProcurementWorkflowController extends Controller
             'deliveries' => $deliveries,
             'rejection_categories' => Delivery::REJECTION_CATEGORIES,
             'suppliers' => $po->status === PurchaseOrder::DRAFT ? $this->rankedSuppliers($po->team_id) : [],
+            // Supplier Product Catalog costs of this product (information for the draft; the supplier and agreed price stay the staff's choice).
+            'catalog_prices' => $po->status === PurchaseOrder::DRAFT && $po->product_id
+                ? (app(SupplierCatalogQuery::class)->forInventoryProducts($po->team_id, [$po->product_id])[$po->product_id] ?? [])
+                : [],
             'resolutions' => Delivery::RESOLUTIONS,
         ]);
     }

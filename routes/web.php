@@ -19,6 +19,7 @@ use App\Http\Controllers\QuotationController;
 use App\Http\Controllers\RecycleBinController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SaleController;
+use App\Http\Controllers\SupplierCatalogController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\Teams\TeamInvitationController;
 use App\Http\Controllers\UserController;
@@ -211,6 +212,10 @@ Route::prefix('{current_team}')
             Route::get('inventory/history', [InventoryController::class, 'history'])->name('inventory.history');
             Route::get('inventory/export-csv', [InventoryController::class, 'exportCsv'])->name('inventory.export-csv');
             Route::get('inventory/export', [InventoryController::class, 'export'])->name('inventory.export');
+            // Supplier Product Catalog: supplier offers and USD costs before inventory registration
+            Route::get('inventory/supplier-catalog', [SupplierCatalogController::class, 'index'])->name('inventory.supplier-catalog.index');
+            Route::get('inventory/supplier-catalog/{catalogProduct}', [SupplierCatalogController::class, 'show'])->whereNumber('catalogProduct')->name('inventory.supplier-catalog.show');
+            Route::post('inventory/supplier-catalog/{catalogProduct}/register', [SupplierCatalogController::class, 'register'])->whereNumber('catalogProduct')->name('inventory.supplier-catalog.register');
         });
 
         // Suppliers & AHP Evaluation Module (Admin and Suppliers Staff)
@@ -253,6 +258,7 @@ Route::prefix('{current_team}')
             Route::post('procurement', [ProcurementWorkflowController::class, 'submitRequests'])->name('procurement.store');
             Route::post('procurement/requests', [ProcurementWorkflowController::class, 'submitRequests'])->name('procurement.requests.store');
             Route::post('procurement/requests/{purchaseRequest}/submit', [ProcurementWorkflowController::class, 'submitDraft'])->name('procurement.requests.submit');
+            Route::get('procurement/catalog-prices', [SupplierCatalogController::class, 'procurementOptions'])->name('procurement.catalog-prices');
         });
 
         // Document imports: inventory products (Inventory module) and supplier quotations (Quotations module).

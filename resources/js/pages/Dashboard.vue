@@ -16,11 +16,12 @@ const chartOptions = shallowRef({
     maintainAspectRatio: false,
     animation: { duration: 400 },
     plugins: {
-        legend: { labels: { color: '#333' } },
+        legend: { position: 'bottom' as const, align: 'start' as const, labels: { color: '#62665b', usePointStyle: true, boxWidth: 8, boxHeight: 8, padding: 20, font: { size: 11 } } },
+        tooltip: { backgroundColor: '#303624', padding: 12, cornerRadius: 10 },
     },
     scales: {
-        x: { ticks: { color: '#666' }, grid: { color: '#eee' } },
-        y: { ticks: { color: '#666' }, grid: { color: '#eee' } },
+        x: { border: { display: false }, ticks: { color: '#717568', maxRotation: 0, maxTicksLimit: 8 }, grid: { display: false } },
+        y: { border: { display: false }, ticks: { color: '#717568', padding: 10 }, grid: { color: '#eff0eb' } },
     },
 });
 
@@ -63,18 +64,24 @@ const chartData = computed(() => ({
     datasets: [
         {
             label: 'Historical Demand (Units)',
-            backgroundColor: '#4ade80',
-            borderColor: '#4ade80',
+            backgroundColor: '#4b5320',
+            borderColor: '#4b5320',
             data: props.forecastSeries?.historical ?? [],
             tension: 0.3,
+            borderWidth: 2,
+            pointRadius: 2,
+            pointHoverRadius: 5,
         },
         {
             label: `Forecast (SMA-${props.forecastSeries?.window ?? 3})`,
-            backgroundColor: '#F8B803',
-            borderColor: '#F8B803',
+            backgroundColor: '#b58a16',
+            borderColor: '#b58a16',
             borderDash: [5, 5],
             data: props.forecastSeries?.forecast ?? [],
             tension: 0.3,
+            borderWidth: 2,
+            pointRadius: 2,
+            pointHoverRadius: 5,
         },
     ],
 }));
@@ -138,10 +145,11 @@ defineOptions({
         :invitations="pendingInvitations"
     />
 
-    <div class="workspace-page">
+    <div class="workspace-page analytics-workspace">
         <!-- Dashboard Header -->
         <div class="page-header">
             <div>
+                <p class="section-eyebrow mb-2">Overview</p>
                 <h1 class="page-title">Hello, {{ firstName }}!</h1>
                 <p class="page-subtitle">
                     <template v-if="isFirstTimeLogin">
@@ -166,44 +174,45 @@ defineOptions({
             </div>
         </div>
         <!-- Stat Cards -->
-        <div class="grid grid-cols-2 gap-3 xl:grid-cols-4">
-            <div class="rounded-xl border border-gray-200 bg-white px-4 py-3">
-                <p class="text-xs text-gray-500">Total products</p>
-                <p class="mt-1 text-2xl font-semibold text-gray-900">{{ stats?.totalProducts?.toLocaleString() ?? 0 }}</p>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div class="analytics-stat">
+                <p class="text-xs font-medium text-gray-500">Total products</p>
+                <p class="mt-3 break-words text-2xl font-semibold tracking-tight tabular-nums text-gray-900 sm:text-2xl">{{ stats?.totalProducts?.toLocaleString() ?? 0 }}</p>
             </div>
-            <div class="rounded-xl border border-gray-200 bg-white px-4 py-3">
-                <p class="text-xs text-gray-500">Low stock items</p>
-                <p :class="(stats?.lowStockCount ?? 0) > 0 ? 'text-red-600' : 'text-gray-900'" class="mt-1 text-2xl font-semibold">
+            <div class="analytics-stat">
+                <p class="text-xs font-medium text-gray-500">Low stock items</p>
+                <p :class="(stats?.lowStockCount ?? 0) > 0 ? 'text-red-600' : 'text-gray-900'" class="mt-3 break-words text-2xl font-semibold tracking-tight tabular-nums sm:text-2xl">
                     {{ stats?.lowStockCount?.toLocaleString() ?? 0 }}
                 </p>
             </div>
-            <div class="rounded-xl border border-gray-200 bg-white px-4 py-3">
-                <p class="text-xs text-gray-500">Today's sales</p>
-                <p class="mt-1 text-2xl font-semibold text-gray-900">{{ formatCurrency(stats?.todaySales) }}</p>
+            <div class="analytics-stat">
+                <p class="text-xs font-medium text-gray-500">Today's sales</p>
+                <p class="mt-3 break-words text-2xl font-semibold tracking-tight tabular-nums text-gray-900 sm:text-2xl">{{ formatCurrency(stats?.todaySales) }}</p>
             </div>
-            <div class="rounded-xl border border-gray-200 bg-white px-4 py-3">
-                <p class="text-xs text-gray-500">Top supplier (AHP)</p>
-                <p class="mt-1 truncate text-lg font-semibold text-gray-900">{{ stats?.topSupplier?.name ?? 'No supplier yet' }}</p>
+            <div class="analytics-stat">
+                <p class="text-xs font-medium text-gray-500">Top supplier (AHP)</p>
+                <p class="mt-3 break-words text-base font-semibold text-gray-900 sm:text-lg">{{ stats?.topSupplier?.name ?? 'No supplier yet' }}</p>
                 <p v-if="stats?.topSupplier?.score" class="text-xs text-gray-500">Score {{ stats.topSupplier.score }}</p>
             </div>
         </div>
 
         <div
-            class="grid gap-6 xl:grid-cols-[minmax(0,1.65fr)_minmax(320px,1fr)]"
+            class="grid gap-4 sm:gap-6 xl:grid-cols-[minmax(0,1.65fr)_minmax(320px,1fr)]"
         >
             <!-- Chart Area — lazy-loaded via Suspense, skeleton shown while loading -->
             <div
-                class="min-w-0 rounded-xl border border-gray-200 bg-white p-6"
+                class="panel min-w-0 p-5 sm:p-6"
             >
                 <div class="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-                    <h3 class="text-base font-semibold text-gray-900">
-                        Sales &amp; Demand Forecast (SMA)
-                    </h3>
+                    <div>
+                        <h2 class="section-title">Demand overview</h2>
+                        <p class="section-subtitle">Historical demand and the {{ forecastSeries?.window ?? 3 }}-month moving average.</p>
+                    </div>
                     <span v-if="forecastSeries && !forecastSeries.hasData" class="text-xs text-amber-700">
                         No recorded sales or outgoing stock movements yet
                     </span>
                 </div>
-                <div class="h-[280px] w-full sm:h-[300px]">
+                <div class="h-[280px] w-full min-w-0 sm:h-[340px]">
                     <Suspense>
                         <LineChart :data="chartData" :options="chartOptions" />
                         <template #fallback>
@@ -233,11 +242,10 @@ defineOptions({
 
             <!-- Recent Activity Feed -->
             <div
-                class="max-h-[400px] overflow-y-auto rounded-xl border border-gray-200 bg-white p-6"
+                class="panel max-h-[460px] min-w-0 overflow-y-auto p-5 sm:p-6"
             >
-                <h3 class="mb-4 text-base font-semibold text-gray-900">
-                    Recent Activity Feed
-                </h3>
+                <h2 class="section-title">Recent activity</h2>
+                <p class="section-subtitle mb-3">The latest updates across your workspace.</p>
                 <ul class="divide-y divide-gray-100">
                     <li
                         v-for="(activity, idx) in displayActivities"

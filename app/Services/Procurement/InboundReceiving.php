@@ -556,7 +556,7 @@ class InboundReceiving
             'is_active' => false,
             'missing_fields' => $po->unit_of_measure ? ['price'] : ['unit', 'price'],
         ]);
-        $product->forceFill(['status' => 'Incomplete'])->save();
+        $product->forceFill(['status' => 'Out of Stock'])->save(); // stock level; listed under "Incomplete" until it has a selling price
         Cache::forget("team:{$po->team_id}:categories"); // the Inventory category filter shows a new category at once
 
         return $product;

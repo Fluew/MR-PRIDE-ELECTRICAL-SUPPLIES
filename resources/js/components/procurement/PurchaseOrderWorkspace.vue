@@ -87,15 +87,54 @@ const inspectionPayload = () => ({
 
 // Draft order created automatically on approval: staff confirm supplier, quantity, price, terms.
 // The order date is not edited here: it is shown read-only (an administrator correction can change it).
-const draft = reactive({ supplier_id: null as number | null, quantity: 0, unit_cost: 0, promised_delivery_date: '', payment_terms: '', quantity_adjustment_reason: '', notes: '' });
+const draft = reactive({ supplier_id: null as number | null, quantity: 0, unit_cost: null as number | null, promised_delivery_date: '', payment_terms: '', quantity_adjustment_reason: '', notes: '' });
 const draftOpen = ref(false);
+const draftErrors = ref<string[]>([]);
+const draftNotice = ref('');
+// Supplier Product Catalog costs of this product (simulated, unverified): a click fills the supplier
+// and price in the form; staff still review and save. Nothing is chosen automatically.
+const catalogPrices = computed<any[]>(() => data.value?.catalog_prices ?? []);
+const orderUnit = computed(() => String(po.value?.unit_of_measure ?? '').toLowerCase());
+/** The chosen supplier's catalog cost in the order's unit, if one is listed. */
+const catalogCostFor = (supplierId: number | null) => {
+    const p = catalogPrices.value.find((c) => c.supplier_id === supplierId && (!orderUnit.value || c.pricing_unit === orderUnit.value));
+    return p ? Number(p.unit_cost) : null;
+};
+const useCatalogPrice = (p: any) => {
+    draft.supplier_id = p.supplier_id;
+    draft.unit_cost = Number(p.unit_cost);
+};
 const openDraft = () => {
     const p = po.value;
+    // A draft made on approval has no agreed price yet (0.00): start from the supplier's catalog
+    // cost when there is one, otherwise leave the price empty for staff to enter.
+    const saved = Number(p.unit_cost) > 0 ? Number(p.unit_cost) : null;
     Object.assign(draft, {
-        supplier_id: p.supplier_id, quantity: p.quantity, unit_cost: Number(p.unit_cost) || 0,
+        supplier_id: p.supplier_id, quantity: p.quantity, unit_cost: saved ?? catalogCostFor(p.supplier_id),
         promised_delivery_date: p.promised_delivery_date?.slice(0, 10) ?? '', payment_terms: p.payment_terms ?? '', quantity_adjustment_reason: p.quantity_adjustment_reason ?? '', notes: p.notes ?? '',
     });
+    draftErrors.value = [];
+    draftNotice.value = '';
     draftOpen.value = true;
+};
+// Choosing another supplier fills its catalog cost while no price has been entered.
+watch(() => draft.supplier_id, (id) => {
+    if (draftOpen.value && !(Number(draft.unit_cost) > 0)) draft.unit_cost = catalogCostFor(id);
+});
+/** Check the draft here (clear messages instead of the browser's silent field check), then save. */
+const saveDraft = () => {
+    const errors: string[] = [];
+    if (!draft.supplier_id) errors.push('Choose the supplier.');
+    if (!(Number(draft.quantity) >= 1)) errors.push('Enter a quantity of at least 1.');
+    if (!(Number(draft.unit_cost) > 0)) errors.push('Enter the agreed unit price (more than 0).');
+    if (Number(draft.quantity) !== Number(approvedQty.value) && !draft.quantity_adjustment_reason.trim()) errors.push(`Give the reason for changing the approved quantity (${approvedQty.value}).`);
+    if (draft.promised_delivery_date && draft.promised_delivery_date < today) errors.push('The expected delivery date cannot be in the past.');
+    draftErrors.value = errors;
+    if (errors.length) return;
+    act('patch', `procurement/purchase-orders/${po.value.id}/draft`, { ...draft, promised_delivery_date: draft.promised_delivery_date || null }, () => {
+        draftOpen.value = false;
+        draftNotice.value = 'Draft saved. Check the order, then finalize and send it to the supplier.';
+    });
 };
 const approvedQty = computed(() => po.value?.purchase_request?.quantity ?? po.value?.quantity);
 // "Product Not Listed" order still without a catalog product: received in Record Inbound P.O. Delivery,
@@ -244,7 +283,26 @@ const statusClass = (st: string) => ({
                         <p class="font-medium">Draft created automatically when the request was approved.</p>
                         <p class="text-xs">{{ po.notes }} Confirm the supplier, quantity, agreed price and terms, then send it.</p>
                     </section>
-                    <form v-if="po.status === 'Draft' && draftOpen" class="grid grid-cols-1 gap-3 rounded-xl border border-gray-200 p-3 sm:grid-cols-4" @submit.prevent="act('patch', `procurement/purchase-orders/${po.id}/draft`, { ...draft, promised_delivery_date: draft.promised_delivery_date || null }, () => (draftOpen = false))">
+                    <p v-if="draftNotice && po.status === 'Draft'" class="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800" role="status">{{ draftNotice }}</p>
+                    <form v-if="po.status === 'Draft' && draftOpen" novalidate class="grid grid-cols-1 gap-3 rounded-xl border border-gray-200 p-3 sm:grid-cols-4" @submit.prevent="saveDraft">
+                        <div v-if="catalogPrices.length" class="sm:col-span-4">
+                            <p class="field-label">Supplier Product Catalog costs (USD, simulated staging data, not verified quotations)</p>
+                            <ul class="divide-y divide-gray-100 rounded-lg border border-gray-200 text-sm">
+                                <li v-for="p in catalogPrices" :key="p.id" class="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5">
+                                    <span class="text-gray-800">
+                                        {{ p.supplier_name }}
+                                        <span v-if="p.is_lowest && p.offers > 1" class="ml-1 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] text-emerald-700">lowest</span>
+                                        <span v-if="!p.supplier_active" class="ml-1 text-[11px] text-gray-400">(inactive supplier)</span>
+                                    </span>
+                                    <span class="flex items-center gap-2">
+                                        <span class="font-mono">${{ Number(p.unit_cost).toFixed(2) }} / {{ p.pricing_unit }}</span>
+                                        <span v-if="orderUnit && p.pricing_unit !== orderUnit" class="text-[11px] text-amber-700">order unit is {{ orderUnit }}: not comparable</span>
+                                        <button type="button" class="secondary-button !px-2 !py-0.5 text-xs" :disabled="!p.supplier_active" @click="useCatalogPrice(p)">Use</button>
+                                    </span>
+                                </li>
+                            </ul>
+                            <p class="mt-1 text-[11px] text-gray-500">"Use" fills the supplier and agreed price below; confirm them with the supplier before saving. Sent orders keep their own price.</p>
+                        </div>
                         <div class="sm:col-span-2">
                             <label class="field-label" for="dr-sup">Supplier (ranked by AHP supplier evaluation; your choice)</label>
                             <select id="dr-sup" v-model="draft.supplier_id" class="field-control w-full" required>
@@ -261,7 +319,11 @@ const statusClass = (st: string) => ({
                         <div><label class="field-label" for="dr-prom">Expected delivery</label><input id="dr-prom" v-model="draft.promised_delivery_date" type="date" :min="today" class="field-control w-full" /></div>
                         <div class="sm:col-span-2"><label class="field-label" for="dr-terms">Payment terms</label><input id="dr-terms" v-model="draft.payment_terms" class="field-control w-full" placeholder="e.g. 30 days" /></div>
                         <p class="text-sm sm:col-span-4">Total: <span class="font-medium">{{ formatMoney((draft.quantity || 0) * (draft.unit_cost || 0)) }}</span></p>
-                        <div class="flex justify-end gap-2 sm:col-span-4"><button type="button" class="secondary-button" @click="draftOpen = false">Cancel</button><button class="brand-button" :disabled="busy">Save draft</button></div>
+                        <ul v-if="draftErrors.length || actionError" class="space-y-0.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 sm:col-span-4" role="alert">
+                            <li v-for="(e, i) in draftErrors" :key="i">{{ e }}</li>
+                            <li v-if="actionError">{{ actionError }}</li>
+                        </ul>
+                        <div class="flex justify-end gap-2 sm:col-span-4"><button type="button" class="secondary-button" @click="draftOpen = false">Cancel</button><button type="submit" class="brand-button" :disabled="busy">{{ busy ? 'Saving…' : 'Save draft' }}</button></div>
                     </form>
 
                     <section class="flex flex-wrap gap-2">

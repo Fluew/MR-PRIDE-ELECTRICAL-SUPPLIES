@@ -380,8 +380,8 @@ const money = (amount: number, currency: string) =>
         </div>
 
         <!-- Filter Bar -->
-        <div class="flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 bg-white p-4">
-            <div class="relative flex-1 min-w-[240px] max-w-md">
+        <div class="flex flex-wrap items-center gap-3 panel p-4">
+            <div class="relative min-w-0 flex-1 basis-full max-w-md sm:basis-auto sm:min-w-[240px]">
                 <Search class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
                     v-model="search"
@@ -418,7 +418,7 @@ const money = (amount: number, currency: string) =>
         </div>
 
         <!-- Suppliers Table -->
-        <div class="flex-1 rounded-xl bg-white border border-gray-200 p-6">
+        <div class="panel flex-1 p-6">
             <p class="mb-3 text-xs text-gray-500">
                 AHP score = Delivery Performance × {{ Math.round(weights.delivery * 100) }}% + Price Competitiveness × {{ Math.round(weights.price * 100) }}% + Product Quality × {{ Math.round(weights.quality * 100) }}%,
                 from the last {{ periodMonths }} months of inbound deliveries, inspections and purchase order costs. The ranking helps you choose; the system never selects or orders from a supplier.
@@ -523,11 +523,7 @@ const money = (amount: number, currency: string) =>
                         :disabled="!link.url || link.active"
                         @click="link.url && router.visit(link.url, { preserveScroll: true })"
                         v-html="link.label"
-                        :class="[
-                            'px-3 py-1 text-xs rounded-lg border transition-colors',
-                            link.active ? 'bg-[#F8B803] text-white border-[#F8B803] font-semibold' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50',
-                            !link.url ? 'opacity-50 cursor-not-allowed' : ''
-                        ]"
+                        :class="[ 'px-3 py-1 text-xs rounded-lg border transition-colors', link.active ? 'bg-[#F8B803] text-white border-[#F8B803] font-semibold' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50', !link.url ? 'opacity-50 cursor-not-allowed' : '' ]"
                     />
                 </div>
             </div>
@@ -536,7 +532,7 @@ const money = (amount: number, currency: string) =>
 
     <!-- Add / Edit Modal -->
     <div v-if="showAddModal || showEditModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-lg shadow-xl">
+        <div class="panel p-6 w-full max-w-lg shadow-xl">
             <div class="flex justify-between items-center mb-5">
                 <h3 class="text-xl font-semibold text-gray-900">{{ showEditModal ? 'Edit Supplier' : 'Add Supplier' }}</h3>
                 <button @click="showAddModal = false; showEditModal = false" class="text-gray-400 hover:text-gray-600">&times;</button>
@@ -675,7 +671,7 @@ const money = (amount: number, currency: string) =>
 
     <!-- Delete Confirmation Modal -->
     <div v-if="showDeleteModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-md shadow-xl">
+        <div class="panel p-6 w-full max-w-md shadow-xl">
             <h3 class="text-xl font-semibold text-gray-900 mb-2">Delete Supplier</h3>
             <p class="text-gray-600 text-sm mb-2">Move supplier <span class="font-semibold text-gray-900">{{ selectedSupplier?.name }}</span> to the Recycle Bin?</p>
             <p class="text-gray-500 text-xs mb-4">
@@ -719,7 +715,7 @@ const money = (amount: number, currency: string) =>
 
     <!-- Supplier Evaluation -->
     <div v-if="evalSupplier" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" @click.self="evalSupplier = null">
-        <div class="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-gray-200 bg-white" role="dialog" aria-modal="true" aria-labelledby="eval-title">
+        <div class="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden panel" role="dialog" aria-modal="true" aria-labelledby="eval-title">
             <div class="flex items-start justify-between gap-3 border-b border-gray-100 px-6 py-4">
                 <div>
                     <h3 id="eval-title" class="text-lg font-semibold text-gray-900">{{ evalSupplier.name }}</h3>
@@ -738,11 +734,11 @@ const money = (amount: number, currency: string) =>
                 </div>
             </div>
 
-            <div class="flex gap-1 border-b border-gray-100 px-6 text-sm" role="tablist">
+            <div class="flex gap-1 overflow-x-auto border-b border-gray-100 px-4 text-sm sm:px-6" role="tablist">
                 <button v-for="t in [{ k: 'evaluation', l: 'Evaluation' }, { k: 'quotes', l: 'Price quotes' }, { k: 'availability', l: 'Product availability' }]" :key="t.k"
                         type="button" role="tab" :aria-selected="evalTab === t.k"
                         :class="evalTab === t.k ? 'border-[#4b5320] font-semibold text-[#4b5320]' : 'border-transparent text-gray-500'"
-                        class="border-b-2 px-3 py-2" @click="evalTab = t.k as any">{{ t.l }}</button>
+                        class="shrink-0 border-b-2 px-3 py-2 whitespace-nowrap" @click="evalTab = t.k as any">{{ t.l }}</button>
             </div>
 
             <div class="overflow-y-auto px-6 py-4">
@@ -888,14 +884,9 @@ const money = (amount: number, currency: string) =>
 
     <!-- Action Confirmation Modal -->
     <div v-if="showConfirmModal" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-md shadow-xl animate-in fade-in duration-150">
+        <div class="panel p-6 w-full max-w-md shadow-xl animate-in fade-in duration-150">
             <div
-                :class="[
-                    'w-11 h-11 rounded-full flex items-center justify-center mb-4 border',
-                    confirmOptions.variant === 'destructive'
-                        ? 'bg-rose-50 text-rose-600 border-rose-100'
-                        : 'bg-amber-50 text-[#F8B803] border-amber-100'
-                ]"
+                :class="[ 'w-11 h-11 rounded-full flex items-center justify-center mb-4 border', confirmOptions.variant === 'destructive' ? 'bg-rose-50 text-rose-600 border-rose-100' : 'bg-amber-50 text-[#F8B803] border-amber-100' ]"
             >
                 <Trash2 v-if="confirmOptions.variant === 'destructive'" class="w-6 h-6" />
                 <CheckCircle2 v-else class="w-6 h-6" />

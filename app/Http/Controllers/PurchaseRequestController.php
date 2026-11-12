@@ -138,10 +138,13 @@ class PurchaseRequestController extends Controller
         ];
 
         // Available products and suppliers for forms
+        // Products that can be bought: active ones, and products waiting for missing details such as
+        // a selling price (real stock that may need reordering, as on the Inventory page). Products an
+        // admin deactivated are left out. The page lists those at or below their reorder level first.
         $products = Product::where('team_id', $team->id)
-            ->where('is_active', true)
+            ->where(fn ($q) => $q->where('is_active', true)->orWhereNotNull('missing_fields'))
             ->orderBy('name')
-            ->get(['id', 'name', 'sku', 'description', 'unit', 'cost_price', 'stock', 'reorder_level']);
+            ->get(['id', 'name', 'sku', 'description', 'unit', 'cost_price', 'stock', 'reorder_level', 'min_stock', 'status']);
 
         // Plain arrays: cached objects come back as __PHP_Incomplete_Class (cache.serializable_classes).
         $suppliers = Cache::remember("team:{$team->id}:procurement_suppliers_v2", 300, function () use ($team) {

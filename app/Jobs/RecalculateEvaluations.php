@@ -45,7 +45,7 @@ class RecalculateEvaluations implements ShouldBeUniqueUntilProcessing, ShouldQue
         $suppliers = $evaluator->forTeam($this->teamId, $now);
 
         [$changedProducts, $changedSuppliers] = DB::transaction(fn () => [
-            $this->store(EvaluationSnapshot::PRODUCT_PRIORITY, $priorities, fn ($p) => $p['product']['id'], fn ($p) => ['reorder' => $p['reorder']['needed'] ?? false], $now),
+            $this->store(EvaluationSnapshot::PRODUCT_PRIORITY, $priorities, fn ($p) => $p['product']['id'], fn ($p) => ['reorder' => $p['reorder']['needed'] ?? false, 'suggested_quantity' => $p['reorder']['suggested_quantity']], $now),
             $this->store(EvaluationSnapshot::SUPPLIER_EVALUATION, $suppliers, fn ($s, $id) => $id, fn () => [], $now),
         ]);
 

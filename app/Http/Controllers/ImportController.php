@@ -123,25 +123,30 @@ class ImportController extends Controller
         $batch = $this->batch($request);
         $row = ImportRow::where('import_batch_id', $batch->id)->findOrFail((int) $request->route('row'));
         $fields = $batch->module === ImportBatch::INVENTORY
-            ? ['sku', 'name', 'category', 'brand', 'unit', 'cost_price', 'price']
+            ? ['sku', 'name', 'category', 'brand', 'supplier', 'unit', 'cost_price', 'price']
             : ['description', 'item_code', 'unit', 'quantity', 'unit_price', 'amount'];
         $data = $this->validated($request, [
             'values' => ['nullable', 'array'],
             'values.*' => ['nullable', 'string', 'max:1000'],
             'product_id' => ['nullable', 'integer'],
             'skipped' => ['nullable', 'boolean'],
+            'selected' => ['nullable', 'boolean'],
         ]);
         $changes = array_intersect_key($data['values'] ?? [], array_flip($fields));
 
-        return $this->json(fn () => $this->imports->updateRow($row, $request->user(), $changes, $request->has('product_id'), $data['product_id'] ?? null, $request->has('skipped') ? (bool) $data['skipped'] : null)->load('matchedProduct:id,name,sku,unit'));
+        return $this->json(fn () => $this->imports->updateRow($row, $request->user(), $changes, $request->has('product_id'), $data['product_id'] ?? null,
+            $request->has('skipped') ? (bool) $data['skipped'] : null,
+            $request->has('selected') ? (bool) $data['selected'] : null)->load('matchedProduct:id,name,sku,unit'));
     }
 
     public function bulk(Request $request): JsonResponse
     {
         $batch = $this->batch($request);
-        $data = $this->validated($request, ['action' => ['required', Rule::in(['skip_problems', 'restore'])]]);
+        $data = $this->validated($request, ['action' => ['required', Rule::in(['skip_problems', 'restore', 'select_all', 'unselect_all'])]]);
 
-        return $this->json(fn () => ['changed' => $this->imports->bulkSkip($batch, $request->user(), $data['action'] === 'restore' ? 'restore' : 'skip')]);
+        return $this->json(fn () => ['changed' => in_array($data['action'], ['select_all', 'unselect_all'], true)
+            ? $this->imports->bulkSelect($batch, $request->user(), $data['action'] === 'select_all')
+            : $this->imports->bulkSkip($batch, $request->user(), $data['action'] === 'restore' ? 'restore' : 'skip')]);
     }
 
     /** Set or correct the quotation dates of a supplier quotation import during review. */

@@ -5,6 +5,8 @@ namespace App\Services\Import;
 use App\Models\ImportBatch;
 use App\Models\ImportRow;
 use App\Models\Product;
+use App\Models\Supplier;
+use App\Services\Inventory\SupplierCatalog\SupplierCatalogNormalizer;
 use App\Services\MaterialList\ProductMatcher;
 use Illuminate\Support\Collection;
 
@@ -25,7 +27,7 @@ class InventoryRowRules extends RowRules
     /** Fields tracked for completion when missing. */
     public const COMPLETION_FIELDS = ['unit', 'cost_price', 'price', 'category'];
 
-    private const LABELS = ['sku' => 'SKU', 'name' => 'Product name', 'category' => 'Category', 'brand' => 'Brand', 'unit' => 'Unit', 'cost_price' => 'Cost price', 'price' => 'Selling price', 'stock' => 'Stock'];
+    private const LABELS = ['sku' => 'SKU', 'name' => 'Product name', 'category' => 'Category', 'brand' => 'Brand', 'supplier' => 'Supplier', 'unit' => 'Unit', 'cost_price' => 'Cost price', 'price' => 'Selling price', 'stock' => 'Stock'];
 
     public function label(string $field): string
     {
@@ -39,16 +41,22 @@ class InventoryRowRules extends RowRules
         $existing = $products->keyBy(fn ($p) => mb_strtoupper($p->sku));
         $byName = $products->whereNull('deleted_at')->groupBy(fn ($p) => self::nameKey($p->name));
         $matcher = $withMatching ? new ProductMatcher($batch->team_id) : null;
+        // A supplier read from the file is linked only to a supplier already registered (same name,
+        // ignoring case and punctuation); a misread name never creates a supplier.
+        $suppliers = Supplier::where('team_id', $batch->team_id)->get(['id', 'name'])
+            ->groupBy(fn ($s) => SupplierCatalogNormalizer::supplierKey($s->name));
         $seen = [];
         $seenNames = [];
 
         foreach ($rows->sortBy('row_number') as $row) {
             $issues = [];
             $values = [];
-            $sources = array_intersect_key($row->sources ?? [], array_flip(['sku', 'name', 'category', 'brand', 'unit', 'cost_price', 'price']));
+            // '_selected': staff chose to import this row although it matches a product by name.
+            // '_forced' (set below, recalculated every time): that choice is in effect now.
+            $sources = array_intersect_key($row->sources ?? [], array_flip(['sku', 'name', 'category', 'brand', 'supplier', 'unit', 'cost_price', 'price', '_selected']));
             $hadOcrCorrection = false;
 
-            foreach (['sku', 'name', 'category', 'brand', 'unit', 'cost_price', 'price', 'stock'] as $f) {
+            foreach (['sku', 'name', 'category', 'brand', 'supplier', 'unit', 'cost_price', 'price', 'stock'] as $f) {
                 $r = $this->field($row, $f, $ocr);
                 $values[$f] = $r['value'];
                 $sources[$f] = $r['value'] === null && $r['source'] === 'document' ? null : $r['source'];
@@ -64,6 +72,18 @@ class InventoryRowRules extends RowRules
             $values['name'] = $values['name'] !== null ? mb_substr($values['name'], 0, 255) : null;
             $values['brand'] = $values['brand'] !== null ? mb_substr($values['brand'], 0, 100) : null;
             $values['unit'] = $values['unit'] !== null ? mb_substr($values['unit'], 0, 50) : null;
+            $values['supplier'] = $values['supplier'] !== null ? mb_substr($values['supplier'], 0, 255) : null;
+            $values['supplier_id'] = null;
+            if ($values['supplier'] !== null) {
+                $found = $suppliers->get(SupplierCatalogNormalizer::supplierKey($values['supplier']), collect());
+                if ($found->count() === 1) {
+                    $values['supplier_id'] = $found->first()->id;
+                } else {
+                    $issues[] = self::issue('warning', 'supplier', $found->isEmpty()
+                        ? "Supplier \"{$values['supplier']}\" is not in Suppliers: the product is imported without a supplier. Add the supplier first or correct the name."
+                        : "Supplier \"{$values['supplier']}\" matches several suppliers: the product is imported without a supplier.");
+                }
+            }
 
             if ($values['name'] === null) {
                 $issues[] = self::issue('error', 'name', 'Product name is required.');
@@ -88,7 +108,11 @@ class InventoryRowRules extends RowRules
 
             // Without a SKU a new one would be generated, so a row naming an existing product (same
             // name, and the same brand or no brand on either side) would create a duplicate.
+            // Staff can still select such a row: it is then imported as a new product (with a new
+            // SKU) and keeps its warning. A row whose SKU is taken cannot be selected, because a SKU
+            // is unique: it needs another SKU first.
             $forced = null;
+            $selected = (bool) ($sources['_selected'] ?? false);
             $match = $values['sku'] !== null ? $existing->get($values['sku']) : null;
             $nameKey = $values['name'] !== null ? self::nameKey($values['name']) : '';
             $brandKey = self::brandKey($values['brand']);
@@ -99,21 +123,37 @@ class InventoryRowRules extends RowRules
                 ? collect($seenNames[$nameKey] ?? [])->first(fn ($s) => self::sameBrand($s['brand'], $brandKey))
                 : null;
             if ($match) {
-                $issues[] = self::issue('info', 'sku', "SKU {$values['sku']} is already used by \"{$match->name}\"".($match->deleted_at ? ' (archived)' : '').'.');
+                $issues[] = self::issue('info', 'sku', "SKU {$values['sku']} is already used by \"{$match->name}\"".($match->deleted_at ? ' (archived)' : '').'.'
+                    .($selected ? ' Change the SKU to import it as a new product.' : ''));
                 $forced = ImportRow::EXISTING;
                 $row->matched_product_id = $match->deleted_at ? null : $match->id;
+                unset($sources['_selected']);
             } elseif ($values['sku'] !== null && isset($seen[$values['sku']])) {
-                $issues[] = self::issue('info', 'sku', "Same SKU as row {$seen[$values['sku']]}.");
+                $issues[] = self::issue('info', 'sku', "Same SKU as row {$seen[$values['sku']]}."
+                    .($selected ? ' Change the SKU to import it as a new product.' : ''));
                 $forced = ImportRow::DUPLICATE;
+                unset($sources['_selected']);
             } elseif ($sameName) {
-                $issues[] = self::issue('info', 'name', "A product named \"{$sameName->name}\" already exists (SKU {$sameName->sku}). Add a SKU if it is a different product.");
-                $forced = ImportRow::EXISTING;
-                $row->matched_product_id = $sameName->id;
+                if ($selected) {
+                    $sources['_forced'] = 'yes'; // the selection is in effect for this row
+                }
+                $issues[] = $selected
+                    ? self::issue('warning', 'name', "A product named \"{$sameName->name}\" already exists (SKU {$sameName->sku}). Selected: it will be imported as a new product with its own SKU.")
+                    : self::issue('info', 'name', "A product named \"{$sameName->name}\" already exists (SKU {$sameName->sku}). Add a SKU if it is a different product.");
+                $forced = $selected ? null : ImportRow::EXISTING;
+                $row->matched_product_id = $selected ? null : $sameName->id;
             } elseif ($earlierRow) {
-                $issues[] = self::issue('info', 'name', "Same product as row {$earlierRow['row']}.");
-                $forced = ImportRow::DUPLICATE;
+                if ($selected) {
+                    $sources['_forced'] = 'yes';
+                }
+                $issues[] = $selected
+                    ? self::issue('warning', 'name', "Same product as row {$earlierRow['row']}. Selected: both rows will be imported as separate products.")
+                    : self::issue('info', 'name', "Same product as row {$earlierRow['row']}.");
+                $forced = $selected ? null : ImportRow::DUPLICATE;
                 $row->matched_product_id = null;
             } else {
+                // The choice is kept: whether a row repeats another can change when other rows are
+                // edited or skipped, and the selection must still apply when it does.
                 $row->matched_product_id = null;
                 if ($values['sku'] !== null) {
                     $seen[$values['sku']] = $row->row_number;
@@ -127,7 +167,7 @@ class InventoryRowRules extends RowRules
                 $row->suggestions = array_values(array_filter($matcher->match(['description' => $values['name']])['suggestions'], fn ($s) => $s['level'] === 'high'));
             }
             if (! $match && ! $sameName && ! empty($row->suggestions)) {
-                $issues[] = self::issue('warning', 'name', 'Similar to "'.$row->suggestions[0]['name'].'" ('.$row->suggestions[0]['sku'].'). Skip it if it is the same product.');
+                $issues[] = self::issue('warning', 'name', 'Similar to "'.$row->suggestions[0]['name'].'" ('.$row->suggestions[0]['sku'].'). Unselect it if it is the same product.');
             }
 
             $sources['_confidence'] = $this->confidence($ocr, $row, $issues, $sources, $hadOcrCorrection);

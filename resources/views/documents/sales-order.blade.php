@@ -36,19 +36,6 @@
         <tr><td class="muted">Verified payments</td><td class="r">${{ number_format((float) $sale->amount_paid, 2) }}</td></tr>
         <tr><td class="muted">Balance</td><td class="r"><strong>${{ number_format((float) $sale->outstanding_balance, 2) }}</strong></td></tr>
     </table>
-
-    <div class="note"><strong>Payment terms</strong>
-@switch($sale->payment_terms)
-@case('down_payment')Down payment of ${{ number_format((float) $sale->required_down_payment, 2) }} before the order is confirmed; the balance as agreed.@break
-@case('credit')Credit terms: {{ $sale->credit_days }} days{{ $sale->credit_due_date ? ' (due '.$sale->credit_due_date->format('M d, Y').')' : '' }}.@break
-@default Full payment before the order is confirmed.
-@endswitch
-Accepted payment methods: Bank Transfer, GCash. The order is confirmed only after we have verified the payment.</div>
-
-    @if ($sale->quotation?->terms_and_conditions)
-        <div class="note"><strong>Terms and conditions</strong>
-{{ $sale->quotation->terms_and_conditions }}</div>
-    @endif
 @endsection
 
 @section('legal')

@@ -81,6 +81,7 @@ it('UT-81 rounds the average to the nearest whole unit', function () {
 });
 
 it('UT-82 counts months without demand as zero', function () {
+    Carbon::setTestNow('2026-11-30 10:00:00');
     capDemand($this->team, $this->product, '2026-07-10', 30); // nothing in August or September
 
     $series = capSeries($this, '2026-07-01', '2026-11-30');

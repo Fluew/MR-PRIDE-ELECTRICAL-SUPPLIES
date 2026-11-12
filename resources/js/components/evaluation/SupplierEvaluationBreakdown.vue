@@ -32,14 +32,18 @@ const pctOrDash = (v: number | null | undefined) => (v != null ? `${Number(v).to
             <template #inputs="{ criterion: cr }">
                 <template v-if="cr.key === 'delivery'">
                     <p v-if="cr.inputs?.excluded_without_promised_date">{{ cr.inputs.excluded_without_promised_date }} deliveries are not counted for on-time because their purchase order has no promised delivery date.</p>
+                    <div class="overflow-x-auto">
                     <table v-if="cr.inputs?.records?.length" class="mt-1 w-full text-left">
                         <thead><tr class="text-gray-500"><th>Delivery</th><th>PO</th><th>Promised</th><th>Delivered</th><th>On time</th></tr></thead>
                         <tbody><tr v-for="r in cr.inputs.records" :key="r.delivery_number"><td>{{ r.delivery_number }}</td><td>{{ r.po_number }}</td><td>{{ r.promised }}</td><td>{{ r.delivered }}</td><td>{{ r.on_time ? 'Yes' : 'No' }}</td></tr></tbody>
                     </table>
+                    </div>
+                    <div class="overflow-x-auto">
                     <table v-if="cr.inputs?.purchase_orders?.length" class="mt-2 w-full text-left">
                         <thead><tr class="text-gray-500"><th>PO</th><th class="text-right">Ordered</th><th class="text-right">Accepted</th></tr></thead>
                         <tbody><tr v-for="r in cr.inputs.purchase_orders" :key="r.po_number"><td>{{ r.po_number }}</td><td class="text-right">{{ r.ordered }}</td><td class="text-right">{{ r.accepted }}</td></tr></tbody>
                     </table>
+                    </div>
                 </template>
                 <template v-if="cr.key === 'price'">
                     <div v-for="cmp in cr.inputs?.comparisons ?? []" :key="cmp.product.id + cmp.basis" class="mt-2">
@@ -52,10 +56,12 @@ const pctOrDash = (v: number | null | undefined) => (v != null ? `${Number(v).to
                         </ul>
                     </div>
                 </template>
+                <div class="overflow-x-auto">
                 <table v-if="cr.key === 'quality' && cr.inputs?.records?.length" class="mt-1 w-full text-left">
                     <thead><tr class="text-gray-500"><th>Delivery</th><th>Inspected</th><th>Result</th><th class="text-right">Accepted</th><th class="text-right">Rejected</th><th>Reason</th></tr></thead>
                     <tbody><tr v-for="r in cr.inputs.records" :key="r.delivery_number"><td>{{ r.delivery_number }}</td><td>{{ r.inspected_on }}</td><td>{{ r.result }}</td><td class="text-right">{{ r.accepted }}</td><td class="text-right">{{ r.rejected }}</td><td>{{ r.reason || '—' }}</td></tr></tbody>
                 </table>
+                </div>
             </template>
         </ScoreBreakdown>
     </div>

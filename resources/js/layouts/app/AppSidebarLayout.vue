@@ -26,7 +26,7 @@ useFlashToast();
     <AppShell variant="sidebar">
         <a href="#workspace-content" class="skip-link">Skip to workspace</a>
         <AppSidebar />
-        <AppContent variant="sidebar" class="min-w-0 bg-gray-50">
+        <AppContent variant="sidebar" class="admin-workspace min-w-0 bg-[#f7f8f5]">
             <AppSidebarHeader :breadcrumbs="breadcrumbs" />
             <div
                 id="workspace-content"

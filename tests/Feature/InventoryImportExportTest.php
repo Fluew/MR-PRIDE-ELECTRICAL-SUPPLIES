@@ -4,6 +4,7 @@ use App\Enums\TeamRole;
 use App\Models\ImportBatch;
 use App\Models\ImportRow;
 use App\Models\Product;
+use App\Models\Supplier;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\MaterialList\OcrEngine;
@@ -227,6 +228,46 @@ it('reads a photo of a stock list with OCR and reports misread digits', function
     // OCR values need an explicit check before import.
     $this->actingAs($this->user)->withCookies($this->cookies)
         ->post("/{$this->team->slug}/imports/batches/{$batch->id}/confirm")->assertStatus(422);
+});
+
+it('reads a Supplier column and links each product to that registered supplier', function () {
+    $jz = Supplier::create(['team_id' => $this->team->id, 'name' => 'J.Z. Electrical Supply, Inc.', 'status' => 'Active']);
+    $file = invXlsx([
+        ['SKU', 'Product Name', 'Category', 'Supplier', 'Unit', 'Selling Price'],
+        ['BRK-50', 'iC60N Breaker 3P 50A', 'Circuit Breakers', 'JZ Electrical Supply Inc', 'pcs', 90],
+        ['BRK-32', 'iC60N Breaker 3P 32A', 'Circuit Breakers', 'Unknown Trading Co.', 'pcs', 60],
+        ['BRK-20', 'iC60N Breaker 3P 20A', 'Circuit Breakers', '', 'pcs', 40],
+    ]);
+
+    $batch = invImport($this, $file);
+    expect(invRowValues($batch, ['sku', 'supplier', 'supplier_id']))->toEqual([
+        ['BRK-50', 'JZ Electrical Supply Inc', $jz->id],   // same supplier, written differently
+        ['BRK-32', 'Unknown Trading Co.', null],
+        ['BRK-20', null, null],
+    ]);
+    $unknown = $batch->rows()->get()->firstWhere(fn ($r) => $r->values['sku'] === 'BRK-32');
+    expect(collect($unknown->issues)->pluck('message')->implode(' '))->toContain('is not in Suppliers')
+        ->and($unknown->status)->toBe(ImportRow::READY); // a warning, not a blocker
+
+    $this->actingAs($this->user)->withCookies($this->cookies)
+        ->post("/{$this->team->slug}/imports/batches/{$batch->id}/confirm")->assertOk()->assertJson(['created' => 3]);
+
+    expect(Product::where('sku', 'BRK-50')->value('supplier_id'))->toBe($jz->id)
+        ->and(Product::where('sku', 'BRK-32')->value('supplier_id'))->toBeNull()
+        ->and(Supplier::where('team_id', $this->team->id)->count())->toBe(1); // a name read from a file never creates a supplier
+});
+
+it('reads the Supplier column from a photo with OCR', function () {
+    $sonepar = Supplier::create(['team_id' => $this->team->id, 'name' => 'Sonepar Singapore', 'status' => 'Active']);
+    invFakeOcr(ocrTsv([
+        'SKU      Product Name          Supplier             Selling Price',
+        'CTR-25   Contactor LC1D25 25A  Sonepar Singapore          121.00',
+    ]));
+
+    $batch = invImport($this, invPng());
+
+    expect(invRowValues($batch, ['sku', 'name', 'supplier', 'supplier_id', 'price']))
+        ->toEqual([['CTR-25', 'Contactor LC1D25 25A', 'Sonepar Singapore', $sonepar->id, 121.0]]);
 });
 
 it('turns a photo without readable column headers into lines for staff to fix', function () {

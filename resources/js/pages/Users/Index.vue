@@ -826,7 +826,7 @@ const regenerateRecoveryKey = () => {
                             </div>
 
                             <!-- Link section -->
-                            <div v-if="enrollmentNotice.link" class="flex items-center gap-1.5 bg-white border border-emerald-300 rounded-xl p-1 flex-1 min-w-[280px] max-w-xl">
+                            <div v-if="enrollmentNotice.link" class="flex items-center gap-1.5 bg-white border border-emerald-300 rounded-xl p-1 flex-1 min-w-0 basis-full sm:basis-auto sm:min-w-[280px] max-w-xl">
                                 <input
                                     type="text"
                                     readonly
@@ -866,12 +866,7 @@ const regenerateRecoveryKey = () => {
             <nav class="flex space-x-2 -mb-px overflow-x-auto">
                 <button
                     @click="switchTab('accounts')"
-                    :class="[
-                        activeTab === 'accounts'
-                            ? 'border-gray-900 text-gray-900 font-medium'
-                            : 'border-transparent text-gray-500 hover:text-gray-900 font-medium',
-                        'whitespace-nowrap py-2.5 px-3 border-b-2 text-sm flex items-center gap-2 transition-colors'
-                    ]"
+                    :class="[ activeTab === 'accounts' ? 'border-gray-900 text-gray-900 font-medium' : 'border-transparent text-gray-500 hover:text-gray-900 font-medium', 'whitespace-nowrap py-2.5 px-3 border-b-2 text-sm flex items-center gap-2 transition-colors' ]"
                 >
                     <Users class="w-4 h-4" />
                     User Accounts
@@ -879,12 +874,7 @@ const regenerateRecoveryKey = () => {
 
                 <button
                     @click="switchTab('sessions')"
-                    :class="[
-                        activeTab === 'sessions'
-                            ? 'border-gray-900 text-gray-900 font-medium'
-                            : 'border-transparent text-gray-500 hover:text-gray-900 font-medium',
-                        'whitespace-nowrap py-2.5 px-3 border-b-2 text-sm flex items-center gap-2 transition-colors'
-                    ]"
+                    :class="[ activeTab === 'sessions' ? 'border-gray-900 text-gray-900 font-medium' : 'border-transparent text-gray-500 hover:text-gray-900 font-medium', 'whitespace-nowrap py-2.5 px-3 border-b-2 text-sm flex items-center gap-2 transition-colors' ]"
                 >
                     <Activity class="w-4 h-4" />
                     Active Sessions
@@ -892,12 +882,7 @@ const regenerateRecoveryKey = () => {
 
                 <button
                     @click="switchTab('devices')"
-                    :class="[
-                        activeTab === 'devices'
-                            ? 'border-gray-900 text-gray-900 font-medium'
-                            : 'border-transparent text-gray-500 hover:text-gray-900 font-medium',
-                        'whitespace-nowrap py-2.5 px-3 border-b-2 text-sm flex items-center gap-2 transition-colors'
-                    ]"
+                    :class="[ activeTab === 'devices' ? 'border-gray-900 text-gray-900 font-medium' : 'border-transparent text-gray-500 hover:text-gray-900 font-medium', 'whitespace-nowrap py-2.5 px-3 border-b-2 text-sm flex items-center gap-2 transition-colors' ]"
                 >
                     <Laptop class="w-4 h-4" />
                     Trusted Devices
@@ -910,7 +895,7 @@ const regenerateRecoveryKey = () => {
         <!-- ========================================== -->
         <div v-if="activeTab === 'accounts'">
             <!-- Filters -->
-            <div class="mb-6 flex flex-col sm:flex-row gap-3 rounded-xl border border-gray-200 bg-white p-4">
+            <div class="mb-6 flex flex-col sm:flex-row gap-3 panel p-4">
                 <div class="relative flex-1 sm:max-w-md">
                     <Search class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input
@@ -943,7 +928,7 @@ const regenerateRecoveryKey = () => {
             </div>
 
             <!-- Table -->
-            <div class="rounded-xl bg-white border border-gray-200 p-6">
+            <div class="panel p-6">
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse">
                         <thead>
@@ -1045,10 +1030,7 @@ const regenerateRecoveryKey = () => {
                                         <button
                                             v-if="isSuperAdmin && user.id !== currentAuthUserId"
                                             @click="openStatusModal(user)"
-                                            :class="[
-                                                'text-xs font-semibold px-2.5 py-1 border rounded-lg transition-colors',
-                                                user.is_active ? 'border-amber-200 text-amber-700 hover:bg-amber-50' : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50'
-                                            ]"
+                                            :class="[ 'text-xs font-semibold px-2.5 py-1 border rounded-lg transition-colors', user.is_active ? 'border-amber-200 text-amber-700 hover:bg-amber-50' : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50' ]"
                                         >
                                             {{ user.is_active ? 'Deactivate' : 'Activate' }}
                                         </button>
@@ -1105,7 +1087,7 @@ const regenerateRecoveryKey = () => {
         <!-- ========================================== -->
         <div v-else-if="activeTab === 'sessions' && isSuperAdmin">
             <!-- Filter -->
-            <div class="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 rounded-xl border border-gray-200 bg-white p-4">
+            <div class="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 panel p-4">
                 <div class="relative flex-1 sm:max-w-md">
                     <Search class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input
@@ -1121,7 +1103,7 @@ const regenerateRecoveryKey = () => {
                 </div>
             </div>
 
-            <div class="rounded-xl bg-white border border-gray-200 p-6">
+            <div class="panel p-6">
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse">
                         <thead>
@@ -1214,7 +1196,7 @@ const regenerateRecoveryKey = () => {
             </div>
 
             <!-- Top Card: Emergency Recovery Key -->
-            <div class="mb-6 rounded-xl border border-gray-200 bg-white p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div class="mb-6 panel p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h3 class="text-sm font-semibold text-gray-900 flex items-center gap-2">
                         Emergency Admin Device Recovery Key
@@ -1248,7 +1230,7 @@ const regenerateRecoveryKey = () => {
 
 
             <!-- Filters & Actions -->
-            <div class="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 rounded-xl border border-gray-200 bg-white p-4">
+            <div class="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 panel p-4">
                 <div class="relative flex-1 sm:max-w-md">
                     <Search class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input
@@ -1271,7 +1253,7 @@ const regenerateRecoveryKey = () => {
             </div>
 
             <!-- Devices Table -->
-            <div class="rounded-xl bg-white border border-gray-200 p-6">
+            <div class="panel p-6">
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse">
                         <thead>
@@ -1412,7 +1394,7 @@ const regenerateRecoveryKey = () => {
         <!-- ========================================== -->
         <div v-else-if="activeTab === 'audit'">
             <!-- Filter Bar -->
-            <div class="mb-6 flex flex-col sm:flex-row gap-3 rounded-xl border border-gray-200 bg-white p-4">
+            <div class="mb-6 flex flex-col sm:flex-row gap-3 panel p-4">
                 <div class="relative flex-1">
                     <Search class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input
@@ -1440,7 +1422,7 @@ const regenerateRecoveryKey = () => {
             </div>
 
             <!-- Table -->
-            <div class="rounded-xl bg-white border border-gray-200 p-6">
+            <div class="panel p-6">
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse">
                         <thead>
@@ -1527,7 +1509,7 @@ const regenerateRecoveryKey = () => {
         <!-- ========================================== -->
         <div v-else-if="activeTab === 'security'">
             <!-- Filter Bar -->
-            <div class="mb-6 flex flex-col sm:flex-row gap-3 rounded-xl border border-gray-200 bg-white p-4">
+            <div class="mb-6 flex flex-col sm:flex-row gap-3 panel p-4">
                 <div class="relative flex-1">
                     <Search class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input
@@ -1565,7 +1547,7 @@ const regenerateRecoveryKey = () => {
             </div>
 
             <!-- Table -->
-            <div class="rounded-xl bg-white border border-gray-200 p-6">
+            <div class="panel p-6">
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse">
                         <thead>
@@ -1661,7 +1643,7 @@ const regenerateRecoveryKey = () => {
 
     <!-- Add Account Modal -->
     <div v-if="showAddModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-md shadow-xl">
+        <div class="panel p-6 w-full max-w-md shadow-xl">
             <div class="flex justify-between items-center mb-5">
                 <h3 class="text-xl font-semibold text-gray-900">Create User Account</h3>
                 <button @click="showAddModal = false" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
@@ -1784,7 +1766,7 @@ const regenerateRecoveryKey = () => {
 
     <!-- Edit User Modal -->
     <div v-if="showEditModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-md shadow-xl">
+        <div class="panel p-6 w-full max-w-md shadow-xl">
             <div class="flex justify-between items-center mb-5">
                 <h3 class="text-xl font-semibold text-gray-900">Edit Member Role & Account</h3>
                 <button @click="showEditModal = false" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
@@ -1854,7 +1836,7 @@ const regenerateRecoveryKey = () => {
 
     <!-- Toggle Status Confirmation Modal -->
     <div v-if="showStatusModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-md shadow-xl">
+        <div class="panel p-6 w-full max-w-md shadow-xl">
             <h3 class="text-xl font-semibold text-gray-900 mb-2">
                 {{ selectedUser?.is_active ? 'Deactivate Account' : 'Activate Account' }}
             </h3>
@@ -1883,7 +1865,7 @@ const regenerateRecoveryKey = () => {
 
     <!-- Delete Account Confirmation Modal -->
     <div v-if="showDeleteModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-md shadow-xl">
+        <div class="panel p-6 w-full max-w-md shadow-xl">
             <h3 class="text-xl font-semibold text-gray-900 mb-2">Are you sure you want to permanently delete this record?</h3>
             <p class="text-gray-600 text-sm mb-3 leading-relaxed">
                 This action cannot be undone. Related active sessions, registered trusted devices, or dependent records must only be revoked or removed when explicitly required by the operation.
@@ -1921,7 +1903,7 @@ const regenerateRecoveryKey = () => {
 
     <!-- Enroll Device Modal -->
     <div v-if="showEnrollModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-lg shadow-xl">
+        <div class="panel p-6 w-full max-w-lg shadow-xl">
             <div class="flex justify-between items-center mb-5">
                 <h3 class="text-xl font-semibold text-gray-900">Initiate Workstation Enrollment</h3>
                 <button @click="showEnrollModal = false" class="text-gray-400 hover:text-gray-600 text-xl cursor-pointer">&times;</button>
@@ -2014,7 +1996,7 @@ const regenerateRecoveryKey = () => {
 
     <!-- Rename Device Modal -->
     <div v-if="showRenameDeviceModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-md shadow-xl">
+        <div class="panel p-6 w-full max-w-md shadow-xl">
             <div class="flex justify-between items-center mb-5">
                 <h3 class="text-xl font-semibold text-gray-900">Rename Workstation</h3>
                 <button @click="showRenameDeviceModal = false" class="text-gray-400 hover:text-gray-600 text-xl cursor-pointer">&times;</button>
@@ -2051,7 +2033,7 @@ const regenerateRecoveryKey = () => {
 
     <!-- Revoke Session Modal -->
     <div v-if="showRevokeSessionModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-md shadow-xl">
+        <div class="panel p-6 w-full max-w-md shadow-xl">
             <h3 class="text-xl font-semibold text-gray-900 mb-2">Revoke Active Session</h3>
             <p class="text-gray-600 text-sm mb-6">
                 Are you sure you want to revoke the session for
@@ -2071,7 +2053,7 @@ const regenerateRecoveryKey = () => {
 
     <!-- Revoke All User Sessions Modal -->
     <div v-if="showRevokeUserSessionsModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-md shadow-xl">
+        <div class="panel p-6 w-full max-w-md shadow-xl">
             <h3 class="text-xl font-semibold text-gray-900 mb-2">Terminate All Sessions</h3>
             <p class="text-gray-600 text-sm mb-6">
                 Are you sure you want to terminate all active sessions for
@@ -2091,7 +2073,7 @@ const regenerateRecoveryKey = () => {
 
     <!-- Revoke Device Modal -->
     <div v-if="showRevokeDeviceModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-md shadow-xl">
+        <div class="panel p-6 w-full max-w-md shadow-xl">
             <h3 class="text-xl font-semibold text-gray-900 mb-2">Revoke Trusted Device</h3>
             <p class="text-gray-600 text-sm mb-4">
                 Are you sure you want to revoke access for
@@ -2129,7 +2111,7 @@ const regenerateRecoveryKey = () => {
 
     <!-- View Metadata Modal -->
     <div v-if="showMetadataModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-lg shadow-xl">
+        <div class="panel p-6 w-full max-w-lg shadow-xl">
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-lg font-semibold text-gray-900">Event Context Data</h3>
                 <button @click="showMetadataModal = false" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
@@ -2145,14 +2127,9 @@ const regenerateRecoveryKey = () => {
 
     <!-- Universal Action Confirmation Modal -->
     <div v-if="showConfirmModal" class="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-md shadow-xl animate-in fade-in duration-150">
+        <div class="panel p-6 w-full max-w-md shadow-xl animate-in fade-in duration-150">
             <div
-                :class="[
-                    'w-11 h-11 rounded-full flex items-center justify-center mb-4 border',
-                    confirmOptions.confirmVariant === 'destructive'
-                        ? 'bg-red-50 text-red-600 border-red-100'
-                        : 'bg-amber-50 text-[#F8B803] border-amber-100'
-                ]"
+                :class="[ 'w-11 h-11 rounded-full flex items-center justify-center mb-4 border', confirmOptions.confirmVariant === 'destructive' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-amber-50 text-[#F8B803] border-amber-100' ]"
             >
                 <AlertTriangle v-if="confirmOptions.confirmVariant === 'destructive'" class="w-6 h-6" />
                 <CheckCircle2 v-else class="w-6 h-6" />
@@ -2209,7 +2186,7 @@ const regenerateRecoveryKey = () => {
 
     <!-- Enrollment Result Modal (Displays Code + Copyable 5-Minute Link) -->
     <div v-if="showEnrollmentResultModal && activeEnrollmentResult" class="fixed inset-0 z-[75] flex items-center justify-center bg-black/60 p-4">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-lg shadow-xl animate-in fade-in duration-150">
+        <div class="panel p-6 w-full max-w-lg shadow-xl animate-in fade-in duration-150">
             <div class="flex items-start justify-between mb-4">
                 <div class="flex items-center gap-3">
                     <div class="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700">
@@ -2255,7 +2232,7 @@ const regenerateRecoveryKey = () => {
                         <button
                             type="button"
                             @click="copyToClipboard(activeEnrollmentResult.code || '', 'code')"
-                            class="px-4 py-2.5 rounded-xl border border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50 text-xs font-semibold text-gray-700 transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer"
+                            class="panel px-4 py-2.5 hover:border-gray-300 hover:bg-gray-50 text-xs font-semibold text-gray-700 transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer"
                         >
                             <Check v-if="copiedCode" class="w-4 h-4 text-emerald-600" />
                             <Copy v-else class="w-4 h-4 text-gray-500" />

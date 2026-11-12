@@ -198,8 +198,12 @@
     .page-actions {
         @apply flex w-full flex-wrap items-center gap-2.5 lg:w-auto lg:justify-end;
     }
+    /* On a phone the actions share the row evenly instead of leaving a ragged edge. */
+    .page-actions > :where(a, button) {
+        @apply flex-1 sm:flex-none;
+    }
     .page-title {
-        @apply text-2xl font-semibold tracking-tight text-gray-900 dark:text-white;
+        @apply text-xl font-semibold tracking-tight text-gray-900 sm:text-2xl dark:text-white;
     }
     .page-subtitle {
         @apply mt-1 text-sm text-gray-500 dark:text-gray-400;
@@ -225,11 +229,11 @@
         @apply mb-1.5 block text-sm font-medium text-gray-700;
     }
     .workspace-page {
-        @apply mx-auto flex w-full max-w-[1600px] min-w-0 flex-1 flex-col gap-6 p-4 sm:p-6 lg:p-8;
+        @apply mx-auto flex w-full max-w-[1600px] min-w-0 flex-1 flex-col gap-4 p-4 sm:gap-6 sm:p-6 lg:p-8;
     }
     /* Every module title looks the same, whatever classes the page gives it (section titles excepted). */
     .workspace-page h1:not(.section-title) {
-        @apply text-2xl font-semibold tracking-tight;
+        @apply text-xl font-semibold tracking-tight sm:text-2xl;
     }
     /* Data tables: one comfortable cell padding everywhere (pages set it only for compact tables). */
     .workspace-page :where(table) {
@@ -239,10 +243,10 @@
         @apply bg-gray-50/80;
     }
     .workspace-page :where(th) {
-        @apply px-4 py-3 text-xs font-medium text-gray-500;
+        @apply px-3 py-2.5 text-xs font-medium text-gray-500 sm:px-4 sm:py-3;
     }
     .workspace-page :where(td) {
-        @apply px-4 py-3;
+        @apply px-3 py-2.5 sm:px-4 sm:py-3;
     }
     .workspace-page :where(tbody tr) {
         @apply transition-colors hover:bg-gray-50/70;
@@ -318,5 +322,80 @@
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
         scroll-behavior: auto !important;
+    }
+}
+
+/*
+ * Phones and tablets. Kept outside the layers so it applies whatever classes an element has.
+ * - The page is never wider than the screen, so it cannot be dragged sideways or shrink to a
+ *   zoomed-out view when one element is too wide. Wide tables scroll inside their own box.
+ * - Text keeps its size when the phone is rotated.
+ * - Form fields use 16px text on small screens: iOS zooms the whole page in when a field with
+ *   smaller text is focused, and does not zoom back out.
+ * Pinch-to-zoom itself stays available (people who need larger text rely on it).
+ */
+html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+}
+html,
+body {
+    max-width: 100%;
+    overflow-x: clip;
+}
+@media (max-width: 639px) {
+    input:not([type='checkbox'], [type='radio'], [type='range'], [type='file']),
+    select,
+    textarea {
+        font-size: 16px;
+    }
+}
+
+/* Authenticated admin and staff workspace. Public pages keep their own styling. */
+@layer components {
+    .admin-workspace .workspace-page {
+        @apply gap-5 sm:gap-6;
+    }
+    .admin-workspace .panel,
+    .analytics-stat {
+        @apply min-w-0 rounded-2xl border border-gray-200/80 bg-white shadow-[0_2px_8px_-4px_rgba(30,40,20,0.12)] dark:border-gray-800 dark:bg-gray-950;
+    }
+    .analytics-stat {
+        @apply flex flex-col items-start p-5 sm:p-6;
+    }
+    .admin-workspace .page-header {
+        @apply py-2;
+    }
+    .admin-workspace .page-subtitle,
+    .admin-workspace .section-subtitle {
+        @apply max-w-2xl leading-relaxed;
+    }
+    .admin-workspace .field-control {
+        @apply min-h-11 min-w-0 border-gray-200 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100;
+    }
+    .admin-workspace .brand-button,
+    .admin-workspace .secondary-button {
+        @apply min-h-11;
+    }
+    .admin-workspace .secondary-button {
+        @apply dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:hover:bg-gray-900;
+    }
+    .analytics-segments {
+        @apply flex gap-1 rounded-xl bg-[#f0f2eb] p-1;
+    }
+    .admin-workspace :where(table, dd) {
+        @apply tabular-nums;
+    }
+    .admin-workspace .workspace-page :where(th) {
+        @apply py-3 text-xs font-medium sm:py-3.5;
+    }
+    .admin-workspace .workspace-page :where(td) {
+        @apply py-3 sm:py-4;
+    }
+    .admin-workspace .workspace-page :where(tbody tr) {
+        @apply hover:bg-[#f7f8f5] dark:hover:bg-gray-900;
+    }
+    .admin-workspace .workspace-page :where(thead) {
+        @apply bg-[#f7f8f5] dark:bg-gray-900;
     }
 }

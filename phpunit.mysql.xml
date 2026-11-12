@@ -17,7 +17,7 @@
          colors="true"
 >
     <testsuites>
-        <!-- 4.4.1 Unit Testing: select with the pest option "testsuite Unit" (see docs/testing). -->
+        <!-- 4.4.1 Unit Testing: select with the pest option "testsuite Unit" (see README.md, Testing). -->
         <testsuite name="Unit">
             <directory>tests/CapstoneMysql/Unit</directory>
         </testsuite>

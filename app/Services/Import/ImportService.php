@@ -305,14 +305,19 @@ class ImportService
     }
 
     /**
-     * Staff edit of one row: changed fields, product match, or skip/restore. The other rows are
-     * checked again because duplicates depend on them.
+     * Staff edit of one row: changed fields, product match, skip/restore, or select/unselect. The
+     * other rows are checked again because duplicates depend on them.
+     *
+     * Select (the checkbox in the review table): selecting a row includes it in the import. On a
+     * product row that matches an existing or earlier product by name, it is imported anyway as a
+     * new product and keeps its warning. Unselecting such a row returns it to "already in
+     * inventory" or "duplicate"; unselecting any other row skips it.
      *
      * @param  array<string, mixed>  $changes
      */
-    public function updateRow(ImportRow $row, User $user, array $changes, bool $matchChanged = false, ?int $productId = null, ?bool $skip = null): ImportRow
+    public function updateRow(ImportRow $row, User $user, array $changes, bool $matchChanged = false, ?int $productId = null, ?bool $skip = null, ?bool $select = null): ImportRow
     {
-        return DB::transaction(function () use ($row, $user, $changes, $matchChanged, $productId, $skip) {
+        return DB::transaction(function () use ($row, $user, $changes, $matchChanged, $productId, $skip, $select) {
             $batch = ImportBatch::lockForUpdate()->findOrFail($row->import_batch_id);
             $this->assertEditable($batch);
             $row = ImportRow::lockForUpdate()->findOrFail($row->id);
@@ -336,6 +341,22 @@ class ImportService
             if ($skip !== null) {
                 $row->skipped = $skip;
             }
+            if ($select === true) {
+                $row->skipped = false;
+                if ($batch->module === ImportBatch::INVENTORY) {
+                    // Kept only on a row that matches a product by name (InventoryRowRules drops it
+                    // on ordinary rows and on rows whose SKU is taken).
+                    // A string, not true: "edited" counts use a loose contains('edited') on sources.
+                    $sources['_selected'] = 'selected';
+                }
+            } elseif ($select === false) {
+                // A row imported only because it was selected goes back to "already in inventory"
+                // or "duplicate"; any other row is skipped. Either way the selection is cleared.
+                if (empty($sources['_forced'])) {
+                    $row->skipped = true;
+                }
+                unset($sources['_selected'], $sources['_forced']);
+            }
             $row->values = $values;
             $row->sources = $sources;
             $row->edited_by_id = $user->id;
@@ -348,6 +369,32 @@ class ImportService
     }
 
     /** Skip every row with errors (or restore all skipped rows). */
+    /**
+     * Select all / Unselect all (the review table's checkboxes, all at once). Select all includes
+     * every row that can be imported, product rows matched by name included (they keep their
+     * warning); a row whose SKU is taken stays out, as with its own checkbox. Unselect all leaves
+     * every row out. Rows already imported are not touched.
+     */
+    public function bulkSelect(ImportBatch $batch, User $user, bool $select): int
+    {
+        return DB::transaction(function () use ($batch, $user, $select) {
+            $batch = ImportBatch::lockForUpdate()->findOrFail($batch->id);
+            $this->assertEditable($batch);
+            $rows = $batch->rows()->where('status', '!=', ImportRow::IMPORTED)->get();
+            foreach ($rows as $row) {
+                $sources = $row->sources ?? [];
+                unset($sources['_selected'], $sources['_forced']);
+                if ($select && $batch->module === ImportBatch::INVENTORY) {
+                    $sources['_selected'] = 'selected';
+                }
+                $row->forceFill(['skipped' => ! $select, 'sources' => $sources, 'edited_by_id' => $user->id])->save();
+            }
+            $this->reanalyze($batch);
+
+            return $rows->count();
+        });
+    }
+
     public function bulkSkip(ImportBatch $batch, User $user, string $which): int
     {
         return DB::transaction(function () use ($batch, $which, $user) {
@@ -404,7 +451,7 @@ class ImportService
 
             $blocking = $rows->where('status', ImportRow::NEEDS_REVIEW)->count();
             if ($blocking) {
-                throw new WorkflowException("{$blocking} row(s) still need review. Fix them or skip them before importing.");
+                throw new WorkflowException("{$blocking} row(s) still need review. Fix them or unselect them before importing.");
             }
             if ($batch->usedOcr() && ! $ocrChecked) {
                 throw new WorkflowException('This document was read with OCR. Confirm that you checked the values against the original before importing.', 'ocr_checked');
@@ -846,6 +893,7 @@ class ImportService
             'name' => $v['name'],
             'category' => $v['category'] ?? 'General',
             'brand' => $v['brand'],
+            'supplier_id' => $v['supplier_id'] ?? null, // only a supplier already registered (see InventoryRowRules)
             'unit' => $v['unit'],
             'cost_price' => $v['cost_price'],
             'price' => $v['price'],
@@ -855,10 +903,7 @@ class ImportService
             'import_batch_id' => $batch->id,
         ]);
         $product->save();
-        $product->updateCalculatedStatus();
-        if (! $active) {
-            $product->forceFill(['status' => 'Incomplete'])->save();
-        }
+        $product->updateCalculatedStatus(); // stock level; an inactive product is listed under "Incomplete"
 
         return ['product', $product->id];
     }

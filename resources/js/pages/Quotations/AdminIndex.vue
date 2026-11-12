@@ -358,6 +358,30 @@ const formStatusChoices = computed(() => {
 const lineSubtotal = (item: { unit_price: number | null; discount: number | null; quantity: number | null }) =>
     Math.max(0, ((Number(item.unit_price) || 0) - (Number(item.discount) || 0)) * (Number(item.quantity) || 0));
 
+/*
+ * Quotation Summary: one row per line that has a product (or a typed description), with its
+ * supplier, quantity and Unit Price (what the customer pays), so the summary fills in as soon as a
+ * description and supplier are chosen. Supplier costs are not shown here. A line without a selling
+ * price is flagged; no selling price is ever filled in from the cost.
+ */
+const summaryLines = computed(() =>
+    form.value.items
+        .filter((item) => item.product_id || (item.product_name ?? '').trim() !== '')
+        .map((item) => {
+            const qty = Number(item.quantity) || 0;
+            const price = Number(item.unit_price) > 0 ? Number(item.unit_price) : null;
+            return {
+                name: item.product_name || 'Unnamed item',
+                supplier: item.supplier_id ? supplierById.value.get(item.supplier_id)?.name ?? null : null,
+                qty,
+                price,
+                subtotal: lineSubtotal(item),
+                shortStock: item.stock !== null && qty > item.stock,
+            };
+        }),
+);
+const linesWithoutPrice = computed(() => summaryLines.value.filter((l) => l.price === null).length);
+
 // Margin over supplier cost, for staff only.
 const lineMargin = (item: { unit_price: number | null; discount: number | null; unit_cost: number | null }) => {
     if (item.unit_cost == null || !(Number(item.unit_price) > 0)) return null;
@@ -394,10 +418,87 @@ const costNote = (item: { product_id: number | null; supplier_id: number | null;
     return { missing: false, text: `Latest ${costSourceLabels[c.source] ?? c.source}${c.reference ? ` ${c.reference}` : ''}${c.date ? ` · ${c.date}` : ''}` };
 };
 const activeSuppliers = computed(() => (props.suppliers ?? []).filter((s) => !s.status || s.status === 'Active'));
+
+/*
+ * Line Description dropdown: products with the same name are one entry (the same item stocked
+ * under several SKUs, e.g. one per supplier). The line's supplier choice then decides which of
+ * those product records the line uses.
+ *
+ * Line "Select Supplier" dropdown: only the suppliers that carry the chosen item are listed, each
+ * with its own latest cost (cheapest first). A supplier "carries" it when a cost is recorded for
+ * one of its products (delivery, purchase order, verified quote) or it is one product's usual
+ * supplier. Without an item, or when no supplier carries it yet, every supplier is listed.
+ */
+const productKey = (name: string | null | undefined) => (name ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+const productById = computed(() => new Map(props.products.map((p) => [p.id, p])));
+const productGroups = computed(() => {
+    const groups = new Map<string, { key: string; name: string; ids: number[] }>();
+    for (const p of props.products) {
+        const key = productKey(p.name);
+        const g = groups.get(key) ?? { key, name: p.name, ids: [] };
+        g.ids.push(p.id);
+        groups.set(key, g);
+    }
+    return [...groups.values()];
+});
+const groupOf = (productId: number | null) => {
+    const p = productId ? productById.value.get(productId) : undefined;
+    return p ? productGroups.value.find((g) => g.key === productKey(p.name)) ?? null : null;
+};
+
+const costsByProduct = computed(() => {
+    const map = new Map<number, NonNullable<typeof props.supplierCosts>>();
+    for (const c of props.supplierCosts ?? []) {
+        map.set(c.product_id, [...(map.get(c.product_id) ?? []), c]);
+    }
+    return map;
+});
+const supplierById = computed(() => new Map((props.suppliers ?? []).map((s) => [s.id, s])));
+type LineSupplierOption = { id: number; name: string; status?: string; cost: number | null; productId: number };
+const lineSupplierOptions = (item: { product_id: number | null; supplier_id: number | null }): LineSupplierOption[] => {
+    const group = groupOf(item.product_id);
+    if (!group) return [];
+    const options = new Map<number, LineSupplierOption>();
+    // One option per supplier: its cheapest recorded cost among the item's products.
+    const add = (id: number, cost: number | null, productId: number) => {
+        const known = options.get(id);
+        if (known && (cost === null || (known.cost !== null && known.cost <= cost))) return;
+        const s = supplierById.value.get(id);
+        options.set(id, { id, name: s?.name ?? `Supplier #${id}`, status: s?.status, cost, productId });
+    };
+    for (const pid of group.ids) {
+        for (const c of costsByProduct.value.get(pid) ?? []) add(c.supplier_id, Number(c.unit_cost), pid);
+    }
+    for (const pid of group.ids) {
+        const usual = productById.value.get(pid)?.supplier_id;
+        if (usual) add(usual, null, pid);
+    }
+    if (item.product_id && item.supplier_id && options.size) add(item.supplier_id, null, item.product_id); // keep a supplier chosen earlier visible
+
+    return [...options.values()].sort((a, b) => (a.cost ?? Number.POSITIVE_INFINITY) - (b.cost ?? Number.POSITIVE_INFINITY) || a.name.localeCompare(b.name));
+};
+const supplierOptionLabel = (s: LineSupplierOption) =>
+    `${s.name}${s.status && s.status !== 'Active' ? ` (${s.status})` : ''} · ${s.cost !== null ? `USD ${s.cost.toFixed(2)}` : 'no price yet'}`;
 const onSupplierSelect = (index: number) => {
     const item = form.value.items[index];
+    // The supplier's own product record for this item (its SKU and stock); the selling price stays.
+    const option = lineSupplierOptions(item).find((o) => o.id === item.supplier_id);
+    const prod = option ? productById.value.get(option.productId) : undefined;
+    if (prod && prod.id !== item.product_id) {
+        item.product_id = prod.id;
+        item.sku = prod.sku;
+        item.stock = prod.stock;
+    }
     const c = supplierCostFor(item);
     item.unit_cost = c ? Number(c.unit_cost) : null;
+};
+
+/** Description chosen: the item's product with the most stock available becomes the line's product. */
+const onProductGroupSelect = (index: number, key: string) => {
+    const group = productGroups.value.find((g) => g.key === key);
+    if (!group) return;
+    const best = group.ids.map((id) => productById.value.get(id)!).sort((a, b) => b.stock - a.stock)[0];
+    onProductSelect(index, best.id);
 };
 
 const onProductSelect = (index: number, productId: number | null) => {
@@ -405,6 +506,8 @@ const onProductSelect = (index: number, productId: number | null) => {
     const prod = props.products.find(p => p.id === productId);
     if (prod) {
         form.value.items[index].product_id = prod.id;
+        // An empty quantity counts as 0 in every total; start at 1 so the line and the Grand Total show.
+        if (!(Number(form.value.items[index].quantity) > 0)) form.value.items[index].quantity = 1;
         form.value.items[index].sku = prod.sku;
         form.value.items[index].product_name = prod.name;
         form.value.items[index].unit_price = Number(prod.price);
@@ -1386,7 +1489,7 @@ const executeCsvImport = () => {
                 <p class="page-subtitle">Estimates, client approvals and conversion to sales.</p>
             </div>
             <div class="page-actions">
-                <div class="rounded-xl border border-gray-200 bg-white p-[3px]" data-test="quotation-import-menu">
+                <div class="panel p-[3px]" data-test="quotation-import-menu">
                     <GlideSelect
                         :options="importOptions"
                         value=""
@@ -1422,7 +1525,7 @@ const executeCsvImport = () => {
         </div>
 
         <!-- Metrics Overview -->
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div
                 v-for="card in [
                     { label: 'Requests to review', value: metrics.pendingCount },
@@ -1431,7 +1534,7 @@ const executeCsvImport = () => {
                     { label: 'Active pipeline value', value: formatCurrency(metrics.totalQuotedValue) },
                 ]"
                 :key="card.label"
-                class="bg-white px-4 py-3 rounded-xl border border-gray-200"
+                class="analytics-stat"
             >
                 <p class="text-xs text-gray-500">{{ card.label }}</p>
                 <p class="text-2xl font-semibold text-gray-900 mt-1">{{ card.value }}</p>
@@ -1439,7 +1542,7 @@ const executeCsvImport = () => {
         </div>
 
         <!-- Filter & Search Controls -->
-        <div class="flex flex-col md:flex-row gap-3 items-center justify-between rounded-xl border border-gray-200 bg-white p-4">
+        <div class="flex flex-col md:flex-row gap-3 items-center justify-between panel p-4">
             <div class="flex flex-col sm:flex-row gap-3 w-full md:w-auto flex-1">
                 <!-- Search -->
                 <div class="relative flex-1 sm:max-w-xs">
@@ -1478,7 +1581,7 @@ const executeCsvImport = () => {
         </div>
 
         <!-- Quotations Table Card -->
-        <div class="flex-1 rounded-xl bg-white border border-gray-200 p-6 flex flex-col justify-between">
+        <div class="panel flex-1 p-6 flex flex-col justify-between">
             <div class="overflow-x-auto">
                 <table class="w-full text-left border-collapse">
                     <thead>
@@ -1663,11 +1766,12 @@ const executeCsvImport = () => {
                             <!-- Expanded Details for Multi-Item Quotes -->
                             <tr v-if="isRowExpanded(quote.id)" class="bg-gray-50/70 border-b border-gray-100">
                                 <td colspan="7" class="p-3 pl-8">
-                                    <div class="rounded-xl border border-gray-200 bg-white p-3.5">
+                                    <div class="panel p-3.5">
                                         <div class="text-[11px] font-semibold text-gray-500 mb-2 flex items-center justify-between">
                                             <span>Quotation Line Items ({{ quote.items.length }})</span>
                                             <span class="text-gray-400 font-mono text-[10px]">{{ quote.quotation_number }}</span>
                                         </div>
+                                        <div class="overflow-x-auto">
                                         <table class="w-full text-left text-xs">
                                             <thead>
                                                 <tr class="text-gray-400 border-b border-gray-100 pb-1 text-[11px]">
@@ -1692,6 +1796,7 @@ const executeCsvImport = () => {
                                                 </tr>
                                             </tbody>
                                         </table>
+                                        </div>
                                     </div>
                                 </td>
                             </tr>
@@ -1724,10 +1829,7 @@ const executeCsvImport = () => {
                             :disabled="!link.url || link.active"
                             @click="link.url && router.get(link.url, {}, { only: ['quotations', 'filters', 'metrics'] })"
                             v-html="link.label"
-                            :class="[
-                                link.active ? 'bg-[#4b5320] text-white font-semibold' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50',
-                                !link.url ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
-                            ]"
+                            :class="[ link.active ? 'bg-[#4b5320] text-white font-semibold' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50', !link.url ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer' ]"
                             class="px-3 py-1 text-xs rounded-lg transition-colors">
                     </button>
                 </div>
@@ -1739,7 +1841,7 @@ const executeCsvImport = () => {
     <!-- CREATE / EDIT QUOTATION MODAL -->
     <!-- ========================================================================= -->
     <div v-if="showCreateEditModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 overflow-y-auto">
-        <div class="bg-white border border-gray-200 rounded-xl w-full max-w-5xl shadow-xl overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in duration-150">
+        <div class="panel w-full max-w-5xl shadow-xl overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in duration-150">
             <!-- Modal Header -->
             <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/70">
                 <div class="flex items-center gap-3">
@@ -1892,15 +1994,14 @@ const executeCsvImport = () => {
                                 <tr v-for="(item, index) in form.items" :key="index" class="hover:bg-gray-50/60 transition-colors">
                                     <!-- Product Dropdown -->
                                     <td class="p-2.5">
-                                        <select :value="item.product_id" 
-                                                @change="onProductSelect(index, Number(($event.target as HTMLSelectElement).value))"
+                                        <select :value="groupOf(item.product_id)?.key ?? ''" aria-label="Product"
+                                                @change="onProductGroupSelect(index, ($event.target as HTMLSelectElement).value)"
                                                 class="w-full bg-white border border-gray-200 rounded p-1.5 text-xs text-gray-900 focus:border-[#F8B803] focus:outline-none mb-1">
-                                            <option :value="null">-- Select Product from Inventory --</option>
-                                            <option v-for="p in products" :key="p.id" :value="p.id">
-                                                {{ p.name }} ({{ p.sku }}) - {{ formatCurrency(p.price) }} [Stock: {{ p.stock }}]
-                                            </option>
+                                            <option value="">-- Select Product from Inventory --</option>
+                                            <option v-for="g in productGroups" :key="g.key" :value="g.key">{{ g.name }}</option>
                                         </select>
-                                        <div class="flex items-center gap-2">
+                                        <!-- Free-text description and SKU only for an item that is not in inventory -->
+                                        <div v-if="!item.product_id" class="flex items-center gap-2">
                                             <input v-model="item.product_name" type="text" placeholder="Description" aria-label="Description" class="flex-1 bg-gray-50/50 border border-gray-200 rounded p-1 text-[11px] text-gray-900 focus:outline-none" />
                                             <input v-model="item.sku" type="text" placeholder="SKU" class="w-28 font-mono bg-gray-50/50 border border-gray-200 rounded p-1 text-[11px] text-gray-500 focus:outline-none" />
                                         </div>
@@ -1930,8 +2031,14 @@ const executeCsvImport = () => {
                                         <label class="sr-only" :for="`q-supplier-${index}`">Select Supplier</label>
                                         <select :id="`q-supplier-${index}`" v-model="item.supplier_id" @change="onSupplierSelect(index)" class="mb-1 w-full bg-white border border-gray-200 rounded p-1.5 text-xs text-gray-900 focus:border-[#F8B803] focus:outline-none" data-test="line-supplier">
                                             <option :value="null">Select Supplier</option>
-                                            <option v-for="s in suppliers ?? []" :key="s.id" :value="s.id">{{ s.name }}{{ s.status && s.status !== 'Active' ? ` (${s.status})` : '' }}</option>
+                                            <template v-if="lineSupplierOptions(item).length">
+                                                <option v-for="s in lineSupplierOptions(item)" :key="s.id" :value="s.id">{{ supplierOptionLabel(s) }}</option>
+                                            </template>
+                                            <template v-else>
+                                                <option v-for="s in suppliers ?? []" :key="s.id" :value="s.id">{{ s.name }}{{ s.status && s.status !== 'Active' ? ` (${s.status})` : '' }}</option>
+                                            </template>
                                         </select>
+                                        <span v-if="item.product_id && !lineSupplierOptions(item).length" class="block text-[10px] mb-1 leading-tight text-gray-500">No supplier carries this product yet: all suppliers are listed.</span>
                                         <input v-model.number="item.unit_cost" type="number" min="0" step="0.01" placeholder="—" class="w-full bg-gray-50 border border-gray-200 rounded p-1.5 text-xs text-right text-gray-700 focus:border-[#F8B803] focus:outline-none" />
                                         <span v-if="costNote(item)" class="block text-[10px] mt-0.5 leading-tight" :class="costNote(item)?.missing ? 'text-amber-700 font-semibold' : 'text-gray-500'" data-test="cost-note">{{ costNote(item)?.text }}<template v-if="costNote(item)?.missing"> – enter the cost manually</template></span>
                                         <span v-if="lineMargin(item) !== null" class="block text-[10px] mt-0.5 text-right" :class="(lineMargin(item) ?? 0) < 0 ? 'text-rose-600 font-semibold' : 'text-gray-500'">Margin {{ lineMargin(item) }}%</span>
@@ -1990,7 +2097,25 @@ const executeCsvImport = () => {
                     <div class="bg-gray-50/80 p-4 rounded-xl border border-gray-200 flex flex-col justify-between">
                         <h4 class="text-xs font-semibold text-gray-700 mb-3">Quotation Summary</h4>
 
+                        <!-- Lines: filled in as soon as a description (and supplier) is chosen -->
+                        <p v-if="!summaryLines.length" class="mb-3 text-[11px] text-gray-500">Choose a product to see it here.</p>
+                        <ul v-else class="mb-3 max-h-56 divide-y divide-gray-200 overflow-y-auto rounded-lg border border-gray-200 bg-white text-[11px]" data-test="summary-lines">
+                            <li v-for="(l, i) in summaryLines" :key="i" class="px-2.5 py-2">
+                                <div class="flex items-start justify-between gap-2">
+                                    <span class="min-w-0 font-medium text-gray-900">{{ l.name }}</span>
+                                    <span class="shrink-0 font-mono font-semibold text-gray-900">{{ formatCurrency(l.subtotal) }}</span>
+                                </div>
+                                <div class="mt-0.5 flex flex-wrap gap-x-2 text-gray-500">
+                                    <span>{{ l.supplier ?? 'No supplier' }}</span>
+                                    <span>{{ l.qty }} × {{ l.price !== null ? formatCurrency(l.price) : '—' }}</span>
+                                </div>
+                                <div v-if="l.price === null" class="mt-0.5 font-medium text-amber-700">No selling price: enter a Unit Price.</div>
+                                <div v-if="l.shortStock" class="mt-0.5 font-medium text-rose-600">Quantity is more than the stock available.</div>
+                            </li>
+                        </ul>
+
                         <div class="space-y-2 text-xs">
+                            <p v-if="linesWithoutPrice" class="text-[11px] font-medium text-amber-700">{{ linesWithoutPrice }} line(s) without a selling price are counted as 0 in the total.</p>
                             <div class="flex justify-between text-gray-600">
                                 <span>Items Subtotal:</span>
                                 <span class="font-mono font-semibold">{{ formatCurrency(formSubtotal) }}</span>
@@ -2055,7 +2180,7 @@ const executeCsvImport = () => {
     <!-- UPDATE STATUS MODAL -->
     <!-- ========================================================================= -->
     <div v-if="showStatusModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-md shadow-xl animate-in fade-in duration-150">
+        <div class="panel p-6 w-full max-w-md shadow-xl animate-in fade-in duration-150">
             <h3 class="text-lg font-semibold text-gray-900 mb-1">Update Quotation Status</h3>
             <p class="text-xs text-gray-500 mb-4">Quotation: {{ activeQuotation?.quotation_number }} ({{ activeQuotation?.client_name }})</p>
 
@@ -2114,7 +2239,7 @@ const executeCsvImport = () => {
     <!-- GENERATE SALES ORDER -->
     <!-- ========================================================================= -->
     <div v-if="showConvertModal && activeQuotation" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-        <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-gray-200 bg-white p-6 shadow-xl">
+        <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto panel p-6 shadow-xl">
             <h3 class="text-lg font-semibold text-gray-900">Generate Sales Order</h3>
             <p class="mt-1 text-xs text-gray-500">From accepted quotation {{ activeQuotation.quotation_number }} for {{ activeQuotation.client_name }}.</p>
 
@@ -2630,7 +2755,7 @@ const executeCsvImport = () => {
     <!-- OFFICIAL QUOTATION: preview, print, PDF and PNG/JPG are all the same document -->
     <!-- ========================================================================= -->
     <div v-if="showPrintModal && activeQuotation" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-2 sm:p-3" role="dialog" aria-modal="true" aria-labelledby="quote-doc-title">
-        <div class="bg-white border border-gray-200 rounded-xl w-full max-w-[1600px] shadow-xl overflow-hidden flex flex-col h-[97vh]">
+        <div class="panel w-full max-w-[1600px] shadow-xl overflow-hidden flex flex-col h-[97vh]">
             <div class="px-6 py-3 border-b border-gray-100 bg-gray-50 flex flex-wrap justify-between items-center gap-3">
                 <div id="quote-doc-title" class="flex items-center gap-2 text-sm font-semibold text-gray-700">
                     <Printer class="w-4 h-4 text-[#4b5320]" />
@@ -2665,7 +2790,7 @@ const executeCsvImport = () => {
     <!-- CONFIRM DELETE MODAL -->
     <!-- ========================================================================= -->
     <div v-if="showDeleteModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-md shadow-xl animate-in fade-in duration-150">
+        <div class="panel p-6 w-full max-w-md shadow-xl animate-in fade-in duration-150">
             <div class="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mb-4">
                 <Trash2 class="w-6 h-6" />
             </div>
@@ -2714,7 +2839,7 @@ const executeCsvImport = () => {
 
     <!-- Action Confirmation Modal -->
     <div v-if="showConfirmModal" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-md shadow-xl animate-in fade-in duration-150">
+        <div class="panel p-6 w-full max-w-md shadow-xl animate-in fade-in duration-150">
             <div class="w-11 h-11 rounded-full bg-amber-50 text-[#F8B803] flex items-center justify-center mb-4 border border-amber-100">
                 <CheckCircle2 class="w-6 h-6" />
             </div>
@@ -2759,7 +2884,7 @@ const executeCsvImport = () => {
     <!-- CSV IMPORT MODAL -->
     <!-- ========================================================================= -->
     <div v-if="showImportModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 overflow-y-auto">
-        <div class="bg-white border border-gray-200 rounded-xl w-full max-w-3xl shadow-xl overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in duration-150">
+        <div class="panel w-full max-w-3xl shadow-xl overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in duration-150">
             <!-- Modal Header -->
             <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/70">
                 <div class="flex items-center gap-3">
@@ -2809,10 +2934,7 @@ const executeCsvImport = () => {
                     @dragleave.prevent="isDragging = false" 
                     @drop.prevent="onFileDrop"
                     @click="triggerFileSelect"
-                    :class="[
-                        'border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors',
-                        isDragging ? 'border-[#4b5320] bg-[#4b5320]/5' : 'border-gray-300 hover:border-[#F8B803] bg-gray-50/40'
-                    ]"
+                    :class="[ 'border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors', isDragging ? 'border-[#4b5320] bg-[#4b5320]/5' : 'border-gray-300 hover:border-[#F8B803] bg-gray-50/40' ]"
                 >
                     <input ref="fileInputRef" type="file" accept=".csv,text/csv" class="hidden" @change="onFileInputChange" />
                     <FileUp class="w-10 h-10 text-[#4b5320] mx-auto mb-2 opacity-80" />
@@ -2877,7 +2999,7 @@ const executeCsvImport = () => {
                     </div>
 
                     <!-- Live Valid Rows Preview Table -->
-                    <div v-if="csvValidationResult.valid_rows && csvValidationResult.valid_rows.length > 0" class="border border-gray-200 rounded-xl overflow-hidden max-h-48 overflow-y-auto">
+                    <div v-if="csvValidationResult.valid_rows && csvValidationResult.valid_rows.length > 0" class="border border-gray-200 rounded-xl max-h-48 overflow-auto">
                         <table class="w-full text-left text-xs">
                             <thead class="bg-gray-50 border-b border-gray-200 text-gray-500 text-[10px]">
                                 <tr>

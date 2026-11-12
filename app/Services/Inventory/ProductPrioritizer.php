@@ -36,7 +36,7 @@ class ProductPrioritizer
         $months = SmaForecaster::window($forecastMonths ?? SmaForecaster::DEFAULT_WINDOW);
 
         $products = Product::where('team_id', $teamId)->where('is_active', true)
-            ->orderBy('name')->get(['id', 'name', 'sku', 'stock', 'unit', 'reorder_level', 'reorder_quantity', 'created_at']);
+            ->orderBy('name')->get(['id', 'name', 'sku', 'description', 'category', 'stock', 'unit', 'reorder_level', 'reorder_quantity', 'created_at']);
         if ($products->isEmpty()) {
             return [];
         }
@@ -75,7 +75,14 @@ class ProductPrioritizer
             $band = $complete ? $this->band($weightedSum) : null;
 
             $results[$p->id] = [
-                'product' => ['id' => $p->id, 'name' => $p->name, 'sku' => $p->sku, 'unit' => $p->unit ?: 'pcs'],
+                'product' => [
+                    'id' => $p->id,
+                    'name' => $p->name,
+                    'sku' => $p->sku,
+                    'description' => $p->description,
+                    'category' => $p->category,
+                    'unit' => $p->unit ?: 'pcs',
+                ],
                 'complete' => $complete,
                 'score' => $complete ? $weightedSum : null,
                 'partial_score' => $complete ? null : $weightedSum,
@@ -96,10 +103,22 @@ class ProductPrioritizer
                     : null,
                 'available_stock' => $available[$p->id],
                 'forecast' => [
+                    'available' => $f['available'],
                     'months' => $months,
                     'period' => SmaForecaster::PERIOD_LABELS[$months],
                     'monthly' => $f['forecast'],
+                    'decimal_monthly' => $f['decimal_forecast'] ?? null,
                     'period_total' => $f['period_forecast'],
+                    'historical_units' => $f['historical_units'] ?? 0,
+                    'trend' => $f['trend'] ?? ($f['available'] ? 'Stable' : 'Insufficient Data'),
+                    'sma_3' => $f['sma_3'] ?? null,
+                    'sma_3_rounded' => $f['sma_3_rounded'] ?? null,
+                    'sma_6' => $f['sma_6'] ?? null,
+                    'sma_6_rounded' => $f['sma_6_rounded'] ?? null,
+                    'sma_12' => $f['sma_12'] ?? null,
+                    'sma_12_rounded' => $f['sma_12_rounded'] ?? null,
+                    'windows' => $f['windows'] ?? [],
+                    'inputs' => $f['inputs'] ?? [],
                     'reason' => $f['reason'],
                 ],
                 'reorder' => $this->reorderRecommendation($p, $available[$p->id], $f),
@@ -156,8 +175,8 @@ class ProductPrioritizer
      */
     private function reorderRecommendation(Product $p, int $available, array $f): array
     {
-        $level = (int) ($p->reorder_level ?? 0);
-        $qty = (int) ($p->reorder_quantity ?? 0);
+        $level = max(0, (int) ($p->reorder_level ?? 0));
+        $qty = max(0, (int) ($p->reorder_quantity ?? 0));
         $forecast = $f['available'] ? (int) $f['period_forecast'] : null;
         $shortfall = $forecast !== null ? max(0, $forecast - $available) : null;
         $period = SmaForecaster::PERIOD_LABELS[$f['window']] ?? "{$f['window']} months";
@@ -171,6 +190,7 @@ class ProductPrioritizer
         }
         $needed = $reasons !== [];
         $suggested = $needed ? max($qty, (int) $shortfall) : 0;
+        $needed = $suggested > 0;
 
         return [
             'needed' => $needed,

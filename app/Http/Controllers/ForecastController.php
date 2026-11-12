@@ -26,20 +26,7 @@ class ForecastController extends Controller
         $today = Carbon::today();
         $minDate = Carbon::create(2020, 1, 1);
 
-        // Resolve from_date / to_date from request (fallback: current year start → today)
-        // A date that cannot be read is treated as not given, never a server error.
-        $fromDate = DateNormalizer::carbonOrNull($request->input('from_date'))?->max($minDate)
-            ?? Carbon::create($today->year, 1, 1);
-
-        $toDate = DateNormalizer::carbonOrNull($request->input('to_date'))?->min($today)
-            ?? $today->copy();
-
-        // Guard: from must not be after to
-        if ($fromDate->gt($toDate)) {
-            $fromDate = Carbon::create($today->year, 1, 1);
-        }
-
-        $smaWindow = SmaForecaster::window($request->input('sma_window', SmaForecaster::DEFAULT_WINDOW));
+        ['mode' => $mode, 'preset' => $datePreset, 'from' => $fromDate, 'to' => $toDate, 'window' => $smaWindow] = $this->forecastSelection($request);
 
         $category = $request->input('category', 'All');
         $productId = $request->filled('product_id') && $request->input('product_id') !== 'All'
@@ -64,7 +51,7 @@ class ForecastController extends Controller
         }
         $productsList = $productsListQuery
             ->orderBy('name')
-            ->get(['id', 'name', 'sku', 'category', 'stock', 'reorder_level', 'min_stock', 'price', 'unit']);
+            ->get(['id', 'name', 'sku', 'description', 'category', 'stock', 'reorder_level', 'min_stock', 'price', 'unit']);
 
         // Selected product details
         $selectedProduct = null;
@@ -75,17 +62,20 @@ class ForecastController extends Controller
             }
         }
 
+        $forecaster = app(SmaForecaster::class);
+        $priorities = app(ProductPrioritizer::class)->forTeam($team->id, null, $smaWindow);
         $data = $this->calculateForecastData($team->id, $fromDate, $toDate, $smaWindow, $category, $productId);
+        $analytics = $forecaster->analytics($team->id, $fromDate, $toDate, $smaWindow, $category ?: 'All', $productId, $today);
 
         // Product Forecasting Window data
         $productWindow = null;
         if ($selectedProduct) {
             $threshold = $selectedProduct->reorder_level ?: ($selectedProduct->min_stock ?: 10);
-            $forecastNonZero = array_filter($data['forecast'], fn ($v) => $v !== null && $v > 0);
+            $forecastNonZero = array_filter($data['forecast'], fn ($v) => $v !== null);
             // No forecast means no demand estimate: shown as insufficient data, never a default.
-            $avgForecastDemand = ! empty($forecastNonZero) ? (int) round(array_sum($forecastNonZero) / count($forecastNonZero)) : null;
+            $avgForecastDemand = $priorities[$selectedProduct->id]['forecast']['monthly'] ?? null;
             $daysOfSupply = $avgForecastDemand ? (int) round($selectedProduct->stock / ($avgForecastDemand / 30)) : null;
-            $recommendedRestock = max($selectedProduct->reorder_quantity ?: 50, ($threshold * 2) - $selectedProduct->stock);
+            $recommendedRestock = $priorities[$selectedProduct->id]['reorder']['suggested_quantity'] ?? 0;
 
             $urgency = 'Safe';
             if ($selectedProduct->stock <= 0) {
@@ -144,10 +134,10 @@ class ForecastController extends Controller
             ->orderBy('stock')
             ->limit(10)
             ->get(['id', 'sku', 'name', 'category', 'stock', 'reorder_level', 'min_stock', 'reorder_quantity', 'price'])
-            ->map(function ($p) {
+            ->map(function ($p) use ($priorities) {
                 $threshold = $p->reorder_level ?: ($p->min_stock ?: 10);
                 $urgency = $p->stock <= 0 ? 'Urgent' : ($p->stock <= $threshold / 2 ? 'Soon' : 'Monitor');
-                $predictedNeed = max($p->reorder_quantity ?: 50, ($threshold * 2) - $p->stock);
+                $predictedNeed = $priorities[$p->id]['reorder']['suggested_quantity'] ?? 0;
 
                 return [
                     'id' => $p->id,
@@ -164,7 +154,7 @@ class ForecastController extends Controller
         // Review: each product's forecast for the chosen period, with the AHP priority and reorder
         // advice it feeds (the same ProductPrioritizer results as Reports → AHP Product Prioritization).
         $scopeIds = $productId ? [$productId] : $productsList->pluck('id')->all();
-        $productForecasts = collect(app(ProductPrioritizer::class)->forTeam($team->id, null, $smaWindow))
+        $productForecasts = collect($priorities)
             ->only($scopeIds)
             ->sortBy(fn ($p) => [$p['reorder']['needed'] ? 0 : 1, -($p['forecast']['period_total'] ?? -1), $p['product']['name']])
             ->map(fn ($p) => [
@@ -173,14 +163,51 @@ class ForecastController extends Controller
                 'forecast' => $p['forecast'],
                 'classification' => $p['classification'],
                 'score' => $p['score'],
-                'reorder' => ['needed' => $p['reorder']['needed'], 'suggested_quantity' => $p['reorder']['suggested_quantity'], 'basis' => $p['reorder']['basis']],
+                'scale' => $p['scale'] ?? null,
+                'reorder' => [
+                    'needed' => $p['reorder']['needed'],
+                    'suggested_quantity' => $p['reorder']['suggested_quantity'],
+                    'reorder_level' => $p['reorder']['reorder_level'] ?? 0,
+                    'reorder_quantity' => $p['reorder']['reorder_quantity'] ?? 0,
+                    'shortfall' => $p['reorder']['shortfall'] ?? null,
+                    'basis' => $p['reorder']['basis'],
+                ],
             ])->values();
+
+        $positiveDemandCount = $productForecasts->filter(fn ($p) => ($p['forecast']['available'] ?? false) && (($p['forecast']['decimal_monthly'] ?? 0) > 0))->count();
+        $roundedPositiveDemandCount = $productForecasts->filter(fn ($p) => ($p['forecast']['available'] ?? false) && (($p['forecast']['monthly'] ?? 0) > 0))->count();
+        $zeroDemandCount = $productForecasts->filter(fn ($p) => ($p['forecast']['available'] ?? false) && (($p['forecast']['decimal_monthly'] ?? 0) <= 0))->count();
+        $insufficientHistoryCount = $productForecasts->filter(fn ($p) => ! ($p['forecast']['available'] ?? false))->count();
+
+        $summaryCards = [
+            'targetMonth' => $analytics['targetMonth'],
+            'lastCompletedMonth' => $analytics['lastCompletedMonth'],
+            'smaWindow' => $smaWindow,
+            'smaWindowLabel' => $analytics['selectedWindowLabel'],
+            'windowRangeLabel' => $analytics['windowRangeLabel'],
+            'predictedSalesTransactions' => $analytics['currentSummary']['sales_transactions'],
+            'predictedProductsInvolved' => $analytics['currentSummary']['products_involved'] + [
+                'eligible_products' => $analytics['eligibleProductCount'],
+            ],
+            'predictedUnitsSold' => $analytics['currentSummary']['units_sold'],
+            'productsWithForecastedDemand' => [
+                'count' => $positiveDemandCount,
+                'rounded_positive_count' => $roundedPositiveDemandCount,
+                'zero_demand_count' => $zeroDemandCount,
+                'insufficient_history_count' => $insufficientHistoryCount,
+                'eligible_products' => $productForecasts->count(),
+            ],
+        ];
 
         return Inertia::render('Forecast/Index', [
             'fromDate' => $fromDate->format('Y-m-d'),
             'toDate' => $toDate->format('Y-m-d'),
+            'datePreset' => $datePreset,
+            'forecastMode' => $mode,
             'smaWindow' => $smaWindow,
             'forecastPeriods' => SmaForecaster::PERIOD_LABELS,
+            'summaryCards' => $summaryCards,
+            'smaAnalytics' => $analytics,
             'productForecasts' => $productForecasts,
             'selectedCategory' => $category,
             'selectedProductId' => $productId,
@@ -203,22 +230,7 @@ class ForecastController extends Controller
         $team = $request->user()->currentTeam;
         abort_if(! $team, 403, 'No active team selected.');
 
-        $today = Carbon::today();
-        $minDate = Carbon::create(2020, 1, 1);
-
-        // A date that cannot be read is treated as not given, never a server error.
-        $fromDate = DateNormalizer::carbonOrNull($request->input('from_date'))?->max($minDate)
-            ?? Carbon::create($today->year, 1, 1);
-
-        $toDate = DateNormalizer::carbonOrNull($request->input('to_date'))?->min($today)
-            ?? $today->copy();
-
-        if ($fromDate->gt($toDate)) {
-            $fromDate = Carbon::create($today->year, 1, 1);
-        }
-
-        $smaWindow = (int) $request->input('sma_window', 3);
-        $smaWindow = in_array($smaWindow, [3, 6, 12]) ? $smaWindow : 3;
+        ['from' => $fromDate, 'to' => $toDate, 'window' => $smaWindow] = $this->forecastSelection($request);
 
         $category = $request->input('category', 'All');
         $productId = $request->filled('product_id') && $request->input('product_id') !== 'All'
@@ -250,6 +262,84 @@ class ForecastController extends Controller
 
             fclose($file);
         }, 200, $headers);
+    }
+
+    /** Months of history shown before the forecast window in Forecasting Period mode. */
+    private const PERIOD_HISTORY_MONTHS = 12;
+
+    /**
+     * The Forecast Selection:
+     * - When `date_preset` is explicitly supplied (`last_3_months`, `last_6_months`, `last_12_months`,
+     *   `2020_present`, `custom`), the historical graph display range follows the preset while the
+     *   selected `sma_window` (3, 6, or 12) is preserved independently.
+     * - Legacy requests without `date_preset` retain the exact two-mode (`period` vs `range`) behavior.
+     *
+     * @return array{mode: string, preset: string, from: Carbon, to: Carbon, window: int}
+     */
+    private function forecastSelection(Request $request): array
+    {
+        $today = Carbon::today();
+        $minDate = Carbon::create(2020, 1, 1);
+
+        $preset = $request->input('date_preset');
+        $validPresets = ['last_3_months', 'last_6_months', 'last_12_months', '2020_present', 'custom'];
+
+        if (is_string($preset) && in_array($preset, $validPresets, true)) {
+            $window = SmaForecaster::window($request->input('sma_window', SmaForecaster::DEFAULT_WINDOW));
+            $to = $today->copy();
+
+            if ($preset === 'last_3_months') {
+                $from = $today->copy()->startOfMonth()->subMonths(3)->max($minDate);
+            } elseif ($preset === 'last_6_months') {
+                $from = $today->copy()->startOfMonth()->subMonths(6)->max($minDate);
+            } elseif ($preset === 'last_12_months') {
+                $from = $today->copy()->startOfMonth()->subMonths(12)->max($minDate);
+            } elseif ($preset === '2020_present') {
+                $from = $minDate->copy();
+            } else {
+                $from = DateNormalizer::carbonOrNull($request->input('from_date'))?->max($minDate)
+                    ?? Carbon::create($today->year, 1, 1);
+                $to = DateNormalizer::carbonOrNull($request->input('to_date'))?->min($today)
+                    ?? $today->copy();
+                if ($from->gt($to)) {
+                    $from = $to->copy()->startOfYear()->max($minDate);
+                    $to = $to->max($minDate);
+                }
+            }
+
+            return [
+                'mode' => $preset === 'custom' ? 'range' : 'period',
+                'preset' => $preset,
+                'from' => $from,
+                'to' => $to,
+                'window' => $window,
+            ];
+        }
+
+        $mode = $request->input('forecast_mode');
+        if (! in_array($mode, ['range', 'period'], true)) {
+            $hasDates = $request->filled('from_date') || $request->filled('to_date');
+            $mode = $hasDates && ! $request->filled('sma_window') ? 'range' : 'period';
+        }
+
+        if ($mode === 'period') {
+            $window = SmaForecaster::window($request->input('sma_window', SmaForecaster::DEFAULT_WINDOW));
+            $from = $today->copy()->startOfMonth()->subMonths($window + self::PERIOD_HISTORY_MONTHS)->max($minDate);
+
+            return ['mode' => $mode, 'preset' => 'last_12_months', 'from' => $from, 'to' => $today->copy(), 'window' => $window];
+        }
+
+        // A date that cannot be read is treated as not given, never a server error.
+        $from = DateNormalizer::carbonOrNull($request->input('from_date'))?->max($minDate)
+            ?? Carbon::create($today->year, 1, 1);
+        $to = DateNormalizer::carbonOrNull($request->input('to_date'))?->min($today)
+            ?? $today->copy();
+        if ($from->gt($to)) {
+            $from = $to->copy()->startOfYear()->max($minDate);
+            $to = $to->max($minDate);
+        }
+
+        return ['mode' => $mode, 'preset' => 'custom', 'from' => $from, 'to' => $to, 'window' => SmaForecaster::DEFAULT_WINDOW];
     }
 
     private function calculateForecastData(int $teamId, Carbon $fromDate, Carbon $toDate, int $smaWindow, string $category = 'All', ?int $productId = null): array

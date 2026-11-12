@@ -749,7 +749,7 @@ const executeDeleteOutbound = () => {
             </div>
 
             <!-- Tab Switcher (Visible to Admin & Non-Driver Staff) -->
-            <div v-if="!isDeliveryStaff" class="flex w-full items-center gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-white p-1 sm:w-auto sm:self-start lg:self-auto">
+            <div v-if="!isDeliveryStaff" class="flex w-full items-center gap-1 overflow-x-auto panel p-1 sm:w-auto sm:self-start lg:self-auto">
                 <button
                     @click="switchTab('outbound')"
                     class="flex flex-1 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3.5 py-2 text-sm font-medium transition-colors sm:flex-none"
@@ -787,15 +787,15 @@ const executeDeleteOutbound = () => {
                         { label: 'Attempts left', value: outboundMetrics?.attemptsRemaining ?? 0, alert: '' },
                     ]"
                     :key="card.label"
-                    class="rounded-xl border border-gray-200 bg-white px-4 py-3"
+                    class="panel p-4 sm:p-5"
                 >
                     <div class="text-xs text-gray-500">{{ card.label }}</div>
-                    <div :class="card.value > 0 && card.alert ? card.alert : 'text-gray-900'" class="mt-1 text-2xl font-semibold">{{ card.value }}</div>
+                    <div :class="card.value > 0 && card.alert ? card.alert : 'text-gray-900'" class="mt-2 text-2xl font-semibold tracking-tight tabular-nums">{{ card.value }}</div>
                 </div>
             </div>
 
             <!-- Search & Filters Toolbar -->
-            <div class="rounded-xl border border-gray-200 bg-white p-4">
+            <div class="panel p-4">
                 <div class="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
                     <!-- Search Input -->
                     <div class="relative min-w-0 md:min-w-64 md:flex-1">
@@ -866,7 +866,7 @@ const executeDeleteOutbound = () => {
                     <div
                         v-for="item in outboundDeliveries.data"
                         :key="item.id"
-                        class="flex min-w-0 flex-col justify-between rounded-xl border border-gray-200 bg-white p-5"
+                        class="flex min-w-0 flex-col justify-between panel p-5"
                     >
                         <!-- Top Row: Reference, Status & Attempt Badge -->
                         <div>
@@ -1055,7 +1055,7 @@ const executeDeleteOutbound = () => {
             </div>
 
             <!-- Inbound Deliveries Table: one row per delivery record -->
-            <div class="overflow-hidden rounded-xl border border-gray-200 bg-white">
+            <div class="overflow-hidden panel">
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-sm" data-test="inbound-table">
                         <thead class="border-b border-gray-200 bg-gray-50 text-xs font-semibold text-muted-foreground">

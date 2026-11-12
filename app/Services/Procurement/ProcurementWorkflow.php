@@ -73,7 +73,11 @@ class ProcurementWorkflow
 
                     continue;
                 }
-                $product = Product::where('team_id', $team->id)->where('is_active', true)->find($line['product_id'])
+                // Active products, and products only waiting for missing details (e.g. a selling price):
+                // they can still be bought. Products an admin deactivated cannot.
+                $product = Product::where('team_id', $team->id)
+                    ->where(fn ($q) => $q->where('is_active', true)->orWhereNotNull('missing_fields'))
+                    ->find($line['product_id'])
                     ?? throw new WorkflowException('A selected product is not an active product of this team.', "lines.{$i}.product_id");
                 $qty = (int) $line['quantity'];
                 if ($qty < 1) {

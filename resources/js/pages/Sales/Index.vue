@@ -309,7 +309,7 @@ const deleteSale = (sale: Sale) => {
         </div>
 
         <!-- Metrics -->
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div
                 v-for="card in [
                     { label: 'Sales today (confirmed)', value: formatCurrency(metrics.todaySales), alert: '' },
@@ -318,15 +318,15 @@ const deleteSale = (sale: Sale) => {
                     { label: 'Outstanding balances', value: formatCurrency(metrics.outstanding), alert: '' },
                 ]"
                 :key="card.label"
-                class="bg-white border border-gray-200 rounded-xl px-4 py-3"
+                class="analytics-stat"
             >
                 <div class="text-xs text-gray-500">{{ card.label }}</div>
-                <div :class="card.alert || 'text-gray-900'" class="mt-1 text-2xl font-semibold">{{ card.value }}</div>
+                <div :class="card.alert || 'text-gray-900'" class="mt-2 text-2xl font-semibold tracking-tight tabular-nums">{{ card.value }}</div>
             </div>
         </div>
 
         <!-- Filters -->
-        <div class="rounded-xl border border-gray-200 bg-white p-4">
+        <div class="panel p-4">
             <div class="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
                 <div class="relative min-w-0 md:min-w-64 md:flex-1">
                     <Search class="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-gray-400" />
@@ -358,7 +358,7 @@ const deleteSale = (sale: Sale) => {
         </div>
 
         <!-- Orders -->
-        <div class="rounded-xl border border-gray-200 bg-white overflow-hidden">
+        <div class="panel overflow-hidden">
             <div class="overflow-x-auto">
                 <table class="w-full text-left text-sm text-gray-600">
                     <thead class="border-b border-gray-200">
@@ -428,11 +428,7 @@ const deleteSale = (sale: Sale) => {
                         :disabled="!link.url || link.active"
                         @click="link.url && router.visit(link.url, { preserveScroll: true })"
                         v-html="link.label"
-                        :class="[
-                            'inline-flex h-8 min-w-8 items-center justify-center rounded-lg border px-3 text-xs transition-colors',
-                            link.active ? 'bg-brand text-white border-brand font-semibold' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50',
-                            !link.url ? 'opacity-50 cursor-not-allowed' : ''
-                        ]"
+                        :class="[ 'inline-flex h-8 min-w-8 items-center justify-center rounded-lg border px-3 text-xs transition-colors', link.active ? 'bg-brand text-white border-brand font-semibold' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50', !link.url ? 'opacity-50 cursor-not-allowed' : '' ]"
                     />
                 </div>
             </div>
@@ -575,14 +571,9 @@ const deleteSale = (sale: Sale) => {
 
     <!-- Action Confirmation Modal -->
     <div v-if="showConfirmModal" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
-        <div class="bg-white border border-gray-200 p-6 rounded-xl w-full max-w-md shadow-xl animate-in fade-in duration-150">
+        <div class="panel p-6 w-full max-w-md shadow-xl animate-in fade-in duration-150">
             <div
-                :class="[
-                    'w-11 h-11 rounded-full flex items-center justify-center mb-4 border',
-                    confirmOptions.variant === 'danger'
-                        ? 'bg-red-50 text-red-600 border-red-100'
-                        : 'bg-amber-50 text-[#F8B803] border-amber-100'
-                ]"
+                :class="[ 'w-11 h-11 rounded-full flex items-center justify-center mb-4 border', confirmOptions.variant === 'danger' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-amber-50 text-[#F8B803] border-amber-100' ]"
             >
                 <Trash2 v-if="confirmOptions.variant === 'danger'" class="w-6 h-6" />
                 <CheckCircle2 v-else class="w-6 h-6" />

@@ -1182,7 +1182,7 @@ const moneyHorizontalBarOptions = computed(() => ({
         <!-- ─── SECTION A: BUSINESS PERFORMANCE OVERVIEW & KPIS ───── -->
         <div class="space-y-4 print:hidden">
             <!-- Global Date & Scope Filter Bar -->
-            <div class="print:hidden rounded-xl border border-gray-200 bg-white p-4">
+            <div class="print:hidden panel p-4">
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <div class="flex flex-wrap items-center gap-2.5">
                         <span class="text-sm font-medium text-gray-700 flex items-center gap-1.5">
@@ -1245,28 +1245,28 @@ const moneyHorizontalBarOptions = computed(() => ({
             </div>
 
             <!-- Primary KPIs: value plus one supporting detail. Cards that open a tab say so on hover. -->
-            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <div class="bg-white border border-gray-200 rounded-xl px-4 py-3" :title="metrics.valuationBasisNote">
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <div class="analytics-stat" :title="metrics.valuationBasisNote">
                     <div class="text-xs text-gray-500">Catalog valuation</div>
-                    <div class="mt-1 text-2xl font-semibold text-gray-900">{{ formatCurrency(metrics.totalValuation) }}</div>
+                    <div class="mt-2 text-2xl font-semibold tracking-tight tabular-nums text-gray-900">{{ formatCurrency(metrics.totalValuation) }}</div>
                     <div class="mt-1 text-xs text-gray-500">{{ metrics.inventoryCount }} items at cost price</div>
                 </div>
 
-                <button type="button" @click="activeTab = 'low-stock'" class="text-left bg-white border border-gray-200 rounded-xl px-4 py-3 hover:bg-gray-50 transition-colors">
+                <button type="button" @click="activeTab = 'low-stock'" class="analytics-stat text-left hover:bg-gray-50 transition-colors">
                     <div class="text-xs text-gray-500">Low stock</div>
-                    <div :class="metrics.lowStockCount > 0 ? 'text-amber-600' : 'text-gray-900'" class="mt-1 text-2xl font-semibold">{{ metrics.lowStockCount }} items</div>
+                    <div :class="metrics.lowStockCount > 0 ? 'text-amber-600' : 'text-gray-900'" class="mt-2 text-2xl font-semibold tracking-tight tabular-nums">{{ metrics.lowStockCount }} items</div>
                     <div class="mt-1 text-xs" :class="metrics.outOfStockCount > 0 ? 'text-rose-600' : 'text-gray-500'">{{ metrics.outOfStockCount }} out of stock</div>
                 </button>
 
-                <button type="button" @click="activeTab = 'sales'" class="text-left bg-white border border-gray-200 rounded-xl px-4 py-3 hover:bg-gray-50 transition-colors">
+                <button type="button" @click="activeTab = 'sales'" class="analytics-stat text-left hover:bg-gray-50 transition-colors">
                     <div class="text-xs text-gray-500">Sales revenue</div>
-                    <div class="mt-1 text-2xl font-semibold text-gray-900">{{ formatCurrency(metrics.totalRevenue) }}</div>
+                    <div class="mt-2 text-2xl font-semibold tracking-tight tabular-nums text-gray-900">{{ formatCurrency(metrics.totalRevenue) }}</div>
                     <div class="mt-1 text-xs text-gray-500">{{ metrics.salesCount }} completed sales</div>
                 </button>
 
-                <button type="button" @click="activeTab = 'procurement'" class="text-left bg-white border border-gray-200 rounded-xl px-4 py-3 hover:bg-gray-50 transition-colors">
+                <button type="button" @click="activeTab = 'procurement'" class="analytics-stat text-left hover:bg-gray-50 transition-colors">
                     <div class="text-xs text-gray-500">Procurement spend</div>
-                    <div class="mt-1 text-2xl font-semibold text-gray-900">{{ formatCurrency(metrics.totalPurchasesEstimatedCost) }}</div>
+                    <div class="mt-2 text-2xl font-semibold tracking-tight tabular-nums text-gray-900">{{ formatCurrency(metrics.totalPurchasesEstimatedCost) }}</div>
                     <div class="mt-1 text-xs text-gray-500">{{ metrics.totalPurchasesCount }} purchase requests</div>
                 </button>
             </div>
@@ -1327,7 +1327,7 @@ const moneyHorizontalBarOptions = computed(() => ({
                     </div>
 
                     <!-- Export: the selected view, with its filters, in the chosen format (same controls as Inventory). -->
-                    <div class="inline-flex items-center self-start md:self-auto md:ml-auto h-10 shrink-0 rounded-xl border border-gray-200 bg-white p-1">
+                    <div class="inline-flex items-center self-start md:self-auto md:ml-auto h-10 shrink-0 panel p-1">
                         <GlideSelect
                             :options="exportFormats"
                             :value="exportFormat"
@@ -1393,7 +1393,7 @@ const moneyHorizontalBarOptions = computed(() => ({
             <div v-if="activeTab === 'overview'" data-report-view class="space-y-6">
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     <!-- Sales Revenue Trend -->
-                    <div class="lg:col-span-2 bg-white border border-gray-200 rounded-xl p-6 flex flex-col">
+                    <div class="panel lg:col-span-2 p-6 flex flex-col">
                         <div class="flex justify-between items-start mb-4">
                             <div>
                                 <h3 class="text-base font-semibold text-gray-900">Monthly Revenue Velocity</h3>
@@ -1409,7 +1409,7 @@ const moneyHorizontalBarOptions = computed(() => ({
                     </div>
 
                     <!-- Stock Health Donut -->
-                    <div class="bg-white border border-gray-200 rounded-xl p-6 flex flex-col justify-between">
+                    <div class="panel p-6 flex flex-col justify-between">
                         <div>
                             <h3 class="text-base font-semibold text-gray-900 mb-1">Catalog Stock Health</h3>
                             <p class="text-xs text-gray-400 mb-4">Real-time breakdown of warehouse thresholds</p>
@@ -1437,7 +1437,7 @@ const moneyHorizontalBarOptions = computed(() => ({
                 <!-- Row 2: Categories & Top Products -->
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <!-- Inventory by Category Bar Chart -->
-                    <div class="bg-white border border-gray-200 rounded-xl p-6">
+                    <div class="panel p-6">
                         <div class="flex justify-between items-start mb-4">
                             <div>
                                 <h3 class="text-base font-semibold text-gray-900">Stock Units by Product Category</h3>
@@ -1450,7 +1450,7 @@ const moneyHorizontalBarOptions = computed(() => ({
                     </div>
 
                     <!-- Top Products by Valuation -->
-                    <div class="bg-white border border-gray-200 rounded-xl p-6 flex flex-col">
+                    <div class="panel p-6 flex flex-col">
                         <div class="flex justify-between items-start mb-4">
                             <div>
                                 <h3 class="text-base font-semibold text-gray-900">Top Products by Inventory Value</h3>
@@ -1476,7 +1476,7 @@ const moneyHorizontalBarOptions = computed(() => ({
             <div v-else-if="activeTab === 'inventory'" data-report-view class="space-y-6">
                 <!-- Visualizations -->
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div class="bg-white border border-gray-200 rounded-xl p-6">
+                    <div class="panel p-6">
                         <h4 class="text-sm font-semibold text-gray-900 mb-1">Status Distribution</h4>
                         <p class="text-xs text-gray-400 mb-3">Ratio of healthy vs understocked catalog items</p>
                         <div class="h-52">
@@ -1484,7 +1484,7 @@ const moneyHorizontalBarOptions = computed(() => ({
                         </div>
                     </div>
 
-                    <div class="lg:col-span-2 bg-white border border-gray-200 rounded-xl p-6">
+                    <div class="panel lg:col-span-2 p-6">
                         <h4 class="text-sm font-semibold text-gray-900 mb-1">Inventory Valuation by Category</h4>
                         <p class="text-xs text-gray-400 mb-3">Capital value allocated across product lines</p>
                         <div class="h-52">
@@ -1494,7 +1494,7 @@ const moneyHorizontalBarOptions = computed(() => ({
                 </div>
 
                 <!-- Section C: Filterable Detailed Inventory Table -->
-                <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <div class="panel overflow-hidden">
                     <div class="p-4 border-b border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                         <div>
                             <h3 class="text-base font-semibold text-gray-900">Inventory Status Manifest</h3>
@@ -1600,10 +1600,7 @@ const moneyHorizontalBarOptions = computed(() => ({
                                 v-for="p in totalInvPages"
                                 :key="p"
                                 @click="invPage = p"
-                                :class="[
-                                    'w-7 h-7 rounded-lg font-semibold flex items-center justify-center transition-colors',
-                                    invPage === p ? 'bg-[#4b5320] text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                ]"
+                                :class="[ 'w-7 h-7 rounded-lg font-semibold flex items-center justify-center transition-colors', invPage === p ? 'bg-[#4b5320] text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200' ]"
                             >
                                 {{ p }}
                             </button>
@@ -1618,7 +1615,7 @@ const moneyHorizontalBarOptions = computed(() => ({
             <div v-else-if="activeTab === 'low-stock'" data-report-view class="space-y-6">
                 <!-- Visualizations -->
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div class="bg-white border border-gray-200 rounded-xl p-6">
+                    <div class="panel p-6">
                         <h4 class="text-sm font-semibold text-gray-900 mb-1">Stock Shortage Severity</h4>
                         <p class="text-xs text-gray-400 mb-3">Units below configured minimum reorder thresholds</p>
                         <div class="h-56">
@@ -1626,7 +1623,7 @@ const moneyHorizontalBarOptions = computed(() => ({
                         </div>
                     </div>
 
-                    <div class="bg-white border border-gray-200 rounded-xl p-6 flex flex-col justify-between">
+                    <div class="panel p-6 flex flex-col justify-between">
                         <div>
                             <h4 class="text-sm font-semibold text-gray-900 mb-1">Restock Priority Rules</h4>
                             <p class="text-xs text-gray-400 mb-3">Automated replenishment calculation methodology</p>
@@ -1659,7 +1656,7 @@ const moneyHorizontalBarOptions = computed(() => ({
                 </div>
 
                 <!-- Prioritization Table -->
-                <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <div class="panel overflow-hidden">
                     <div class="p-4 border-b border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                         <div>
                             <h3 class="text-base font-semibold text-gray-900">Restock Prioritization Audit</h3>
@@ -1749,7 +1746,7 @@ const moneyHorizontalBarOptions = computed(() => ({
             <div v-else-if="activeTab === 'sales'" data-report-view class="space-y-6">
                 <!-- Visualizations -->
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div class="lg:col-span-2 bg-white border border-gray-200 rounded-xl p-6">
+                    <div class="panel lg:col-span-2 p-6">
                         <div class="flex justify-between items-start mb-4">
                             <div>
                                 <h4 class="text-sm font-semibold text-gray-900">Revenue Generation Timeline</h4>
@@ -1764,7 +1761,7 @@ const moneyHorizontalBarOptions = computed(() => ({
                         </div>
                     </div>
 
-                    <div class="bg-white border border-gray-200 rounded-xl p-6">
+                    <div class="panel p-6">
                         <h4 class="text-sm font-semibold text-gray-900 mb-1">Quotation Statuses</h4>
                         <p class="text-xs text-gray-400 mb-3">Conversion funnel breakdown</p>
                         <div class="h-44">
@@ -1777,28 +1774,18 @@ const moneyHorizontalBarOptions = computed(() => ({
                 </div>
 
                 <!-- Sub-tab Selector for Sales vs Quotations -->
-                <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <div class="panel overflow-hidden">
                     <div class="p-4 border-b border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                         <div class="flex items-center gap-2">
                             <button
                                 @click="salesSubTab = 'sales'"
-                                :class="[
-                                    'px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors',
-                                    salesSubTab === 'sales'
-                                        ? 'bg-gray-100 text-gray-900'
-                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                ]"
+                                :class="[ 'px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors', salesSubTab === 'sales' ? 'bg-gray-100 text-gray-900' : 'bg-gray-100 text-gray-600 hover:bg-gray-200' ]"
                             >
                                 Sales Invoices ({{ quotationsSalesAnalytics.salesList.length }})
                             </button>
                             <button
                                 @click="salesSubTab = 'quotations'"
-                                :class="[
-                                    'px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors',
-                                    salesSubTab === 'quotations'
-                                        ? 'bg-gray-100 text-gray-900'
-                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                ]"
+                                :class="[ 'px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors', salesSubTab === 'quotations' ? 'bg-gray-100 text-gray-900' : 'bg-gray-100 text-gray-600 hover:bg-gray-200' ]"
                             >
                                 Customer Quotations ({{ quotationsSalesAnalytics.quotationsList.length }})
                             </button>
@@ -1901,7 +1888,7 @@ const moneyHorizontalBarOptions = computed(() => ({
             <!-- ═════════════════════════════════════════════════════ -->
             <div v-else-if="activeTab === 'forecast'" data-report-view class="space-y-6">
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div class="lg:col-span-2 bg-white border border-gray-200 rounded-xl p-6">
+                    <div class="panel lg:col-span-2 p-6">
                         <div class="flex justify-between items-start mb-4">
                             <div>
                                 <h4 class="text-sm font-semibold text-gray-900">12-Month Demand vs SMA Predictive Model</h4>
@@ -1913,7 +1900,7 @@ const moneyHorizontalBarOptions = computed(() => ({
                         </div>
                     </div>
 
-                    <div class="bg-white border border-gray-200 rounded-xl p-6 flex flex-col justify-between">
+                    <div class="panel p-6 flex flex-col justify-between">
                         <div>
                             <h4 class="text-sm font-semibold text-gray-900 mb-2">SMA Calculation Transparent Breakdown</h4>
                             <p class="text-xs text-gray-500 mb-4 leading-relaxed">
@@ -1947,7 +1934,7 @@ const moneyHorizontalBarOptions = computed(() => ({
                 </div>
 
                 <!-- Monthly Forecast Table -->
-                <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <div class="panel overflow-hidden">
                     <div class="p-4 border-b border-gray-200">
                         <h3 class="text-base font-semibold text-gray-900">Monthly Forecast Table (Year {{ forecastAnalytics.year }})</h3>
                     </div>
@@ -1987,7 +1974,7 @@ const moneyHorizontalBarOptions = computed(() => ({
             <!-- ═════════════════════════════════════════════════════ -->
             <div v-else-if="activeTab === 'procurement'" data-report-view class="space-y-6">
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div class="bg-white border border-gray-200 rounded-xl p-6">
+                    <div class="panel p-6">
                         <h4 class="text-sm font-semibold text-gray-900 mb-1">Purchase Request Statuses</h4>
                         <p class="text-xs text-gray-400 mb-3">Requisition fulfillment distribution</p>
                         <div class="h-48">
@@ -1995,11 +1982,11 @@ const moneyHorizontalBarOptions = computed(() => ({
                         </div>
                     </div>
 
-                    <div class="lg:col-span-2 bg-white border border-gray-200 rounded-xl p-6 flex flex-col justify-between">
+                    <div class="panel lg:col-span-2 p-6 flex flex-col justify-between">
                         <div>
                             <h4 class="text-sm font-semibold text-gray-900 mb-1">Procurement Operational Summary</h4>
                             <p class="text-xs text-gray-400 mb-4">Total estimated acquisition commitments</p>
-                            <div class="grid grid-cols-3 gap-4">
+                            <div class="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
                                 <div class="p-3 bg-gray-50 rounded-xl border border-gray-100">
                                     <span class="text-xs text-gray-500 font-semibold block">Total Requisitions</span>
                                     <span class="text-xl font-semibold text-gray-900">{{ metrics.totalPurchasesCount }}</span>
@@ -2022,7 +2009,7 @@ const moneyHorizontalBarOptions = computed(() => ({
                 </div>
 
                 <!-- Requisitions Table -->
-                <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <div class="panel overflow-hidden">
                     <div class="p-4 border-b border-gray-200 flex justify-between items-center">
                         <h3 class="text-base font-semibold text-gray-900">Purchase Orders &amp; Requests Ledger</h3>
                         <SpecularButton variant="brand" size="sm" :radius="8" @click="goToProcurement">
@@ -2084,12 +2071,13 @@ const moneyHorizontalBarOptions = computed(() => ({
             <!-- ═════════════════════════════════════════════════════ -->
             <div v-else-if="activeTab === 'priority'" data-report-view class="space-y-6">
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div class="bg-white border border-gray-200 rounded-xl p-6">
+                    <div class="panel p-6">
                         <h4 class="text-sm font-semibold text-gray-900 mb-2">AHP Methodology and Criteria Weights</h4>
                         <p class="text-xs text-gray-500 mb-3 leading-relaxed">
                             Each criterion is normalized to a 0–100 score, multiplied by its fixed weight, and the weighted results are added.
                             A higher score means a higher replenishment priority. Weights are the approved fixed configuration and cannot be changed in the UI.
                         </p>
+                        <div class="overflow-x-auto">
                         <table class="w-full text-left text-xs">
                             <thead><tr class="text-gray-500"><th class="py-1">Criterion</th><th class="text-right">Weight</th></tr></thead>
                             <tbody>
@@ -2099,6 +2087,7 @@ const moneyHorizontalBarOptions = computed(() => ({
                                 <tr class="border-t border-gray-100"><td class="py-1.5">Supplier Availability</td><td class="text-right font-mono">{{ pctW(productPriority.weights.supplier_availability) }}</td></tr>
                             </tbody>
                         </table>
+                        </div>
                         <p class="mt-3 p-2.5 rounded-lg bg-gray-50 border border-gray-100 font-mono text-[11px] text-gray-700">
                             AHP Score = (Demand × {{ productPriority.weights.demand }}) + (Current Stock × {{ productPriority.weights.stock }}) + (Product Movement × {{ productPriority.weights.movement }}) + (Supplier Availability × {{ productPriority.weights.supplier_availability }}) · 1–5 Scale = 1 + 4 × (Score / 100)
                         </p>
@@ -2107,7 +2096,7 @@ const moneyHorizontalBarOptions = computed(() => ({
                         </p>
                     </div>
 
-                    <div class="bg-white border border-gray-200 rounded-xl p-6">
+                    <div class="panel p-6">
                         <h4 class="text-sm font-semibold text-gray-900 mb-2">Criteria Scoring (normalized 0–100)</h4>
                         <div class="space-y-2 text-xs">
                             <div class="p-2.5 rounded-lg bg-gray-50 border border-gray-100">
@@ -2139,7 +2128,7 @@ const moneyHorizontalBarOptions = computed(() => ({
                     </div>
                 </div>
 
-                <section class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between print:hidden" aria-labelledby="reorder-heading">
+                <section class="panel p-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between print:hidden" aria-labelledby="reorder-heading">
                     <div class="flex items-center gap-2">
                         <label for="ahp-period" class="text-xs font-medium text-gray-600">Forecasting period</label>
                         <select id="ahp-period" v-model.number="priorityMonths" class="field-control w-auto" @change="changePriorityPeriod">
@@ -2157,7 +2146,7 @@ const moneyHorizontalBarOptions = computed(() => ({
                     </div>
                 </section>
 
-                <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <div class="panel overflow-hidden">
                     <div class="p-4 border-b border-gray-200">
                         <h3 class="text-base font-semibold text-gray-900">Weighted Contributions per Product</h3>
                         <p class="text-xs text-gray-500">Score (0–100) → weighted contribution for each criterion. Forecast for the next {{ priorityPeriodLabel }}.</p>
@@ -2220,7 +2209,7 @@ const moneyHorizontalBarOptions = computed(() => ({
             <!-- ═════════════════════════════════════════════════════ -->
             <div v-else-if="activeTab === 'ahp'" data-report-view class="space-y-6">
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div class="lg:col-span-2 bg-white border border-gray-200 rounded-xl p-6">
+                    <div class="panel lg:col-span-2 p-6">
                         <div class="flex justify-between items-start mb-4">
                             <div>
                                 <h4 class="text-sm font-semibold text-gray-900">Supplier Evaluation Ranking</h4>
@@ -2232,7 +2221,7 @@ const moneyHorizontalBarOptions = computed(() => ({
                         </div>
                     </div>
 
-                    <div class="bg-white border border-gray-200 rounded-xl p-6 flex flex-col justify-between">
+                    <div class="panel p-6 flex flex-col justify-between">
                         <div>
                             <h4 class="text-sm font-semibold text-gray-900 mb-2">Supplier Evaluation Methodology</h4>
                             <p class="text-xs text-gray-500 mb-3 leading-relaxed">
@@ -2278,7 +2267,7 @@ const moneyHorizontalBarOptions = computed(() => ({
                 </div>
 
                 <!-- Supplier Ranking Table -->
-                <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <div class="panel overflow-hidden">
                     <div class="p-4 border-b border-gray-200">
                         <h3 class="text-base font-semibold text-gray-900">Ranked Supplier Directory</h3>
                     </div>
@@ -2337,12 +2326,7 @@ const moneyHorizontalBarOptions = computed(() => ({
                         :key="mod"
                         type="button"
                         @click="activityModuleFilter = activityModuleFilter === mod ? 'All' : mod"
-                        :class="[
-                            'text-left rounded-xl border px-3.5 py-3 transition-colors cursor-pointer',
-                            activityModuleFilter === mod
-                                ? 'bg-[#4b5320]/10 border-[#4b5320] ring-1 ring-[#4b5320]'
-                                : 'bg-white border-gray-200 hover:bg-gray-50'
-                        ]"
+                        :class="[ 'text-left rounded-xl border px-3.5 py-3 transition-colors cursor-pointer', activityModuleFilter === mod ? 'bg-[#4b5320]/10 border-[#4b5320] ring-1 ring-[#4b5320]' : 'bg-white border-gray-200 hover:bg-gray-50' ]"
                     >
                         <div class="text-[11px] font-medium text-gray-500 truncate">{{ mod }}</div>
                         <div class="mt-1 text-xl font-semibold text-gray-900">
@@ -2353,7 +2337,7 @@ const moneyHorizontalBarOptions = computed(() => ({
                 </div>
 
                 <!-- Activity Feed Table & Filter Controls -->
-                <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <div class="panel overflow-hidden">
                     <div class="p-4 border-b border-gray-200 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
                         <div>
                             <h3 class="text-base font-semibold text-gray-900">Recent Activity Feed</h3>
@@ -2480,10 +2464,7 @@ const moneyHorizontalBarOptions = computed(() => ({
                                 :key="p"
                                 type="button"
                                 @click="activityPage = p"
-                                :class="[
-                                    'w-7 h-7 rounded-lg font-semibold flex items-center justify-center transition-colors',
-                                    activityPage === p ? 'bg-[#4b5320] text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                ]"
+                                :class="[ 'w-7 h-7 rounded-lg font-semibold flex items-center justify-center transition-colors', activityPage === p ? 'bg-[#4b5320] text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200' ]"
                             >
                                 {{ p }}
                             </button>
@@ -2498,7 +2479,7 @@ const moneyHorizontalBarOptions = computed(() => ({
 
         <!-- Calculation breakdown modals (same components as Suppliers) -->
         <div v-if="selectedProductPriority" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 print:hidden" @click.self="selectedProductPriority = null">
-            <div class="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-gray-200 bg-white" role="dialog" aria-modal="true" aria-labelledby="rp-priority-title">
+            <div class="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden panel" role="dialog" aria-modal="true" aria-labelledby="rp-priority-title">
                 <div class="flex items-start justify-between gap-3 border-b border-gray-100 px-6 py-4">
                     <div>
                         <h3 id="rp-priority-title" class="text-base font-semibold text-gray-900">{{ selectedProductPriority.product.name }}</h3>
@@ -2519,7 +2500,7 @@ const moneyHorizontalBarOptions = computed(() => ({
         </div>
 
         <div v-if="selectedSupplierEval" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 print:hidden" @click.self="selectedSupplierEval = null">
-            <div class="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-gray-200 bg-white" role="dialog" aria-modal="true" aria-labelledby="rp-supplier-title">
+            <div class="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden panel" role="dialog" aria-modal="true" aria-labelledby="rp-supplier-title">
                 <div class="flex items-start justify-between gap-3 border-b border-gray-100 px-6 py-4">
                     <h3 id="rp-supplier-title" class="text-base font-semibold text-gray-900">{{ selectedSupplierEval.name }}</h3>
                     <div class="text-right">

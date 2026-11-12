@@ -113,7 +113,7 @@ class SupplierEvaluator
         $onTime = $timed->filter(fn ($d) => $d->delivery_date->lte($d->promised_delivery_date));
 
         // Quantity fulfillment per purchase order, from inspected deliveries (accepted units, capped at the ordered quantity).
-        $byPo = $deliveries->filter(fn ($d) => $d->purchase_order_id && $d->accepted_quantity !== null)->groupBy('purchase_order_id');
+        $byPo = $deliveries->filter(fn ($d) => $d->purchase_order_id && $d->inspection_valid)->groupBy('purchase_order_id');
         $ordered = 0;
         $accepted = 0;
         $poRows = [];
@@ -209,7 +209,7 @@ class SupplierEvaluator
 
     private function qualityCriterion(Collection $deliveries, float $weight): array
     {
-        $inspected = $deliveries->filter(fn ($d) => $d->accepted_quantity !== null && $d->rejected_quantity !== null);
+        $inspected = $deliveries->filter(fn ($d) => $d->inspection_valid);
         $acc = (int) $inspected->sum('accepted_quantity');
         $rej = (int) $inspected->sum('rejected_quantity');
         $total = $acc + $rej;
@@ -270,7 +270,8 @@ class SupplierEvaluator
             })
             ->where('deliveries.team_id', $teamId)
             ->whereBetween('deliveries.delivery_date', [$from->toDateString(), $to->toDateString()])
-            ->where(fn ($q) => $q->whereNull('deliveries.status')->orWhere('deliveries.status', '!=', 'Cancelled'))
+            ->where('deliveries.status', 'Delivered')
+            ->whereHas('inboundDelivery', fn ($q) => $q->where('status', 'confirmed')->where('team_id', $teamId))
             ->orderBy('deliveries.id')
             ->get([
                 'deliveries.*',
@@ -279,7 +280,12 @@ class SupplierEvaluator
                 'purchase_orders.promised_delivery_date',
                 'purchase_orders.supplier_id as po_supplier_id',
             ])
-            ->each(function ($d) {
+            ->each(function ($d) use ($to) {
+                $d->inspection_valid = $d->inspection_result !== null && $d->inspected_on !== null
+                    && $d->inspected_on->lte($to) && $d->inspected_on->gte($d->delivery_date)
+                    && $d->accepted_quantity !== null && $d->rejected_quantity !== null
+                    && $d->accepted_quantity >= 0 && $d->rejected_quantity >= 0
+                    && $d->accepted_quantity + $d->rejected_quantity === $d->quantity;
                 $d->supplier_id = $d->supplier_id ?: $d->po_supplier_id;
                 $d->promised_delivery_date = $d->promised_delivery_date ? Carbon::parse($d->promised_delivery_date) : null;
                 if (! $d->purchase_order_id) {
@@ -305,8 +311,18 @@ class SupplierEvaluator
             ->join('suppliers', 'suppliers.id', '=', DB::raw('COALESCE(deliveries.supplier_id, purchase_orders.supplier_id)'))
             ->join('products', 'products.id', '=', 'purchase_orders.product_id')
             ->where('deliveries.team_id', $teamId)
-            ->where(fn ($q) => $q->whereNull('deliveries.status')->orWhere('deliveries.status', '!=', 'Cancelled'))
+            ->where('deliveries.status', 'Delivered')
+            ->whereHas('inboundDelivery', fn ($q) => $q->where('status', 'confirmed')->where('team_id', $teamId))
+            ->whereNull('purchase_orders.deleted_at')
+            ->where('purchase_orders.team_id', $teamId)
+            ->where('suppliers.team_id', $teamId)
+            ->where('products.team_id', $teamId)
             ->where('deliveries.accepted_quantity', '>', 0)
+            ->whereNotNull('deliveries.inspection_result')
+            ->where('deliveries.inspected_on', '<=', $to->toDateString())
+            ->whereColumn('deliveries.inspected_on', '>=', 'deliveries.delivery_date')
+            ->where('deliveries.rejected_quantity', '>=', 0)
+            ->whereRaw('deliveries.accepted_quantity + deliveries.rejected_quantity = deliveries.quantity')
             ->where('purchase_orders.unit_cost', '>', 0)
             ->whereNull('suppliers.deleted_at')
             ->whereBetween('deliveries.delivery_date', [$from->toDateString(), $to->toDateString()])
