@@ -13,6 +13,8 @@ use App\Services\MaterialList\ExtractionException;
 use App\Services\MaterialList\FileReader;
 use App\Services\MaterialList\ProductListExtractor;
 use App\Services\MaterialList\ProductListParser;
+use Illuminate\Contracts\Cache\Lock;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -164,33 +166,112 @@ class PublicQuotationController extends Controller
             ])->withInput();
         }
 
+        $received = 'Thank you! Your quotation request has been received. Our team will review your request and get in touch shortly.';
+
         $team = Team::first();
         if ($team) {
-            $storedFiles = [];
-            try {
-                // Retried as a whole if the database reports a deadlock between simultaneous requests.
-                DB::transaction(function () use ($validated, $team, $brandItems, $brands, $catalog, $unlisted, $products, $extracted, $productFiles, &$storedFiles) {
-                    $storedFiles = [];
-                    $quotation = $this->createQuotation($validated, $team, $brandItems, $brands, $catalog, $unlisted, $products, $extracted);
-                    $this->keepProductFiles($quotation, $productFiles, $storedFiles);
-                }, 3);
-            } catch (Throwable $e) {
-                // Nothing was saved (the transaction rolled back): remove the copied files, log the
-                // cause, and send the visitor back to the form with everything they entered.
-                Storage::disk('local')->delete($storedFiles);
-                Log::error('Public quotation request could not be saved: '.$e->getMessage(), [
-                    'exception' => $e,
-                    'company' => $validated['company'],
-                    'email' => $validated['email'],
-                ]);
-
+            // The same request sent again (a retry after a slow or lost response, Back + resubmit)
+            // is acknowledged without saving a second copy. Identical requests arriving together
+            // wait for each other, so only one of them is saved.
+            $duplicateKey = 'public-rfq:'.$this->requestFingerprint($validated, $brandItems, $unlisted, $productFiles);
+            $lock = $this->duplicateLock($duplicateKey);
+            if ($lock === false) {
                 return back()->withErrors([
-                    'submit' => 'We could not send your request just now. Please try again in a moment. If it keeps happening, please contact us directly.',
+                    'submit' => 'Your request is still being sent. Please wait a moment before sending it again.',
                 ])->withInput();
+            }
+
+            try {
+                if ($this->recentlyReceived($duplicateKey)) {
+                    return back()->with('success', $received);
+                }
+
+                $storedFiles = [];
+                try {
+                    // Retried as a whole if the database reports a deadlock between simultaneous requests.
+                    DB::transaction(function () use ($validated, $team, $brandItems, $brands, $catalog, $unlisted, $products, $extracted, $productFiles, &$storedFiles) {
+                        $storedFiles = [];
+                        $quotation = $this->createQuotation($validated, $team, $brandItems, $brands, $catalog, $unlisted, $products, $extracted);
+                        $this->keepProductFiles($quotation, $productFiles, $storedFiles);
+                    }, 3);
+                } catch (Throwable $e) {
+                    // Nothing was saved (the transaction rolled back): remove the copied files, log the
+                    // cause, and send the visitor back to the form with everything they entered.
+                    Storage::disk('local')->delete($storedFiles);
+                    Log::error('Public quotation request could not be saved: '.$e->getMessage(), [
+                        'exception' => $e,
+                        'company' => $validated['company'],
+                        'email' => $validated['email'],
+                    ]);
+
+                    return back()->withErrors([
+                        'submit' => 'We could not send your request just now. Please try again in a moment. If it keeps happening, please contact us directly.',
+                    ])->withInput();
+                }
+
+                $this->rememberReceived($duplicateKey);
+            } finally {
+                $lock?->release();
             }
         }
 
-        return back()->with('success', 'Thank you! Your quotation request has been received. Our team will review your request and get in touch shortly.');
+        return back()->with('success', $received);
+    }
+
+    /** How long an identical request is treated as a resend of one already saved. */
+    public const DUPLICATE_WINDOW_SECONDS = 600;
+
+    /**
+     * Same contact, project, brands, products and files (by content) → same fingerprint.
+     *
+     * @param  array<int, UploadedFile>  $files
+     */
+    private function requestFingerprint(array $validated, array $brandItems, string $unlisted, array $files): string
+    {
+        $fields = collect($validated)->except(['productFiles', 'brands', 'hasUnlistedBrands', 'unlistedBrands'])
+            ->map(fn ($v) => is_string($v) ? mb_strtolower(trim($v)) : $v)->sortKeys()->all();
+        $fileHashes = array_map(fn (UploadedFile $f) => (string) hash_file('sha256', $f->getRealPath() ?: $f->getPathname()), $files);
+        sort($fileHashes);
+
+        return hash('sha256', json_encode([$fields, $brandItems, mb_strtolower($unlisted), $fileHashes]));
+    }
+
+    /**
+     * The lock that makes identical requests wait for each other: the lock, false when another
+     * identical request is still being saved after waiting, or null when the cache cannot be
+     * used (the request is then saved without the duplicate check rather than refused).
+     */
+    private function duplicateLock(string $key): Lock|false|null
+    {
+        try {
+            $lock = Cache::lock("{$key}:lock", 120);
+
+            return $lock->block(15) ? $lock : false;
+        } catch (LockTimeoutException) {
+            return false;
+        } catch (Throwable $e) {
+            Log::warning('Public quotation duplicate check unavailable: '.$e->getMessage());
+
+            return null;
+        }
+    }
+
+    private function recentlyReceived(string $key): bool
+    {
+        try {
+            return Cache::has($key);
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    private function rememberReceived(string $key): void
+    {
+        try {
+            Cache::put($key, true, self::DUPLICATE_WINDOW_SECONDS);
+        } catch (Throwable $e) {
+            Log::warning('Public quotation duplicate check could not be recorded: '.$e->getMessage());
+        }
     }
 
     /**

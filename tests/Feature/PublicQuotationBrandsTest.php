@@ -118,7 +118,8 @@ it('keeps brands optional', function () {
     brandProduct($this->team, 'Breaker', 'Schneider');
 
     $this->post('/quotation', validQuotationPayload())->assertSessionHasNoErrors();
-    $this->post('/quotation', validQuotationPayload(['brands' => ['']]))->assertSessionHasNoErrors();
+    // A different client (the same request again would be an identical resend, not saved twice).
+    $this->post('/quotation', validQuotationPayload(['company' => 'Metro Builders', 'brands' => ['']]))->assertSessionHasNoErrors();
 
     expect(Quotation::count())->toBe(2)
         ->and(Quotation::first()->items->where('sku', 'BRAND'))->toHaveCount(0);

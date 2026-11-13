@@ -225,8 +225,10 @@ class Quotation extends Model
 
             // A single UPDATE both increments and locks the row until the transaction ends, so
             // concurrent requests wait for each other instead of reading the same value.
+            // The column is quoted: LAST_VALUE is a reserved word in MySQL 8 (not in MariaDB).
+            $column = DB::getQueryGrammar()->wrap('last_value');
             $bump = fn () => $sequence()->update([
-                'last_value' => DB::raw("(CASE WHEN last_value > {$floor} THEN last_value ELSE {$floor} END) + 1"),
+                'last_value' => DB::raw("(CASE WHEN {$column} > {$floor} THEN {$column} ELSE {$floor} END) + 1"),
                 'updated_at' => now(),
             ]);
 

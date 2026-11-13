@@ -72,9 +72,10 @@ function collideOnCreate(int $times = PHP_INT_MAX): void
 }
 
 it('numbers the first quotation of the day, then counts up', function () {
-    $this->post('/quotation', publicRequest())->assertSessionHasNoErrors();
-    $this->post('/quotation', publicRequest())->assertSessionHasNoErrors();
-    $this->post('/quotation', publicRequest())->assertSessionHasNoErrors();
+    // Three different requests (an identical resend is not saved twice).
+    $this->post('/quotation', publicRequest(['company' => 'Acme Builders']))->assertSessionHasNoErrors();
+    $this->post('/quotation', publicRequest(['company' => 'Metro Builders']))->assertSessionHasNoErrors();
+    $this->post('/quotation', publicRequest(['company' => 'Apex Builders']))->assertSessionHasNoErrors();
 
     expect(Quotation::orderBy('id')->pluck('quotation_number')->all())
         ->toBe(['Q103026-PROD', 'Q103026-PROD-01', 'Q103026-PROD-02']);

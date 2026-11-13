@@ -85,8 +85,10 @@ class InboundDelivery extends Model
             ])->flatten()->map(fn ($n) => preg_match('/-(\d+)$/', (string) $n, $m) ? (int) $m[1] : 0)->max() ?? 0;
 
             $sequence = fn () => DB::table('quotation_number_sequences')->where('team_id', $teamId)->where('prefix', "DEL:{$code}");
+            // Quoted: LAST_VALUE is a reserved word in MySQL 8 (not in MariaDB).
+            $column = DB::getQueryGrammar()->wrap('last_value');
             $bump = fn () => $sequence()->update([
-                'last_value' => DB::raw("(CASE WHEN last_value > {$floor} THEN last_value ELSE {$floor} END) + 1"),
+                'last_value' => DB::raw("(CASE WHEN {$column} > {$floor} THEN {$column} ELSE {$floor} END) + 1"),
                 'updated_at' => now(),
             ]);
             do {
