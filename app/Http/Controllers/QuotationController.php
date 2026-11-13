@@ -243,6 +243,11 @@ class QuotationController extends Controller
             $actions[] = 'status:'.self::SUBMIT_FOR_APPROVAL;
         }
         foreach (QuotationStatus::manual() as $manual) {
+            // A sent quotation's rejection is the customer's answer ("decision"); the workflow
+            // refuses a manual Rejected for it, so the button would always fail.
+            if ($status === QuotationStatus::Sent && $manual === QuotationStatus::Rejected) {
+                continue;
+            }
             if ($status->canMoveTo($manual)) {
                 $actions[] = 'status:'.$manual->value;
             }

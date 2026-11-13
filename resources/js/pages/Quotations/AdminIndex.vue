@@ -793,6 +793,11 @@ const postWorkflow = (quote: Quotation, action: string, data: Record<string, any
     router.post(`/${teamSlug.value}/quotations/${quote.id}/${action}`, data, {
         preserveScroll: true,
         onSuccess: () => onSuccess?.(),
+        // Refused by the server (business rule or validation): the reason comes back as a page
+        // error, which the global toasts don't show, so show it here instead of failing silently.
+        onError: (errors) => {
+            showToast((Object.values(errors)[0] as string) || 'The action could not be completed. Please try again.', 'error');
+        },
         onFinish: () => {
             workflowBusy.value = false;
         },
