@@ -34,13 +34,14 @@ it('no longer accepts a specifications/BOQ attachment on the public form', funct
         'company' => 'Acme Industrial Solutions',
         'contactName' => 'Juan Dela Cruz',
         'email' => 'juan@acme.ph',
-        'phone' => '09171234567',
+        'phoneCountry' => '+63', 'phone' => '9171234567',
         'projectType' => 'Commercial Building',
         'timeline' => '1-3 months',
         'brands' => [
             [
                 'brand' => $brand->name,
-                'details' => '30A 2-pole breakers - 50 pcs',
+                'details' => '30A 2-pole breakers',
+                'quantity' => '50',
             ],
         ],
         'attachment' => $file,

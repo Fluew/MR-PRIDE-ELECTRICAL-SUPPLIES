@@ -76,6 +76,7 @@ const FIELDS: Record<Module, { key: string; label: string; numeric?: boolean; wi
         { key: 'name', label: 'Product name', width: 'min-w-56' },
         { key: 'category', label: 'Category', width: 'w-28' },
         { key: 'brand', label: 'Brand', width: 'w-28' },
+        { key: 'supplier', label: 'Supplier', width: 'min-w-40' },
         { key: 'unit', label: 'Unit', width: 'w-20' },
         { key: 'cost_price', label: 'Cost price', numeric: true, width: 'w-24' },
         { key: 'price', label: 'Selling price', numeric: true, width: 'w-24' },
@@ -244,7 +245,7 @@ const searchProducts = async () => {
     searchResults.value = await request(`${base.value}/batches/${batch.value.id}/products?q=${encodeURIComponent(searchQ.value)}`).catch(() => []);
 };
 
-const bulk = async (action: 'skip_problems' | 'restore') => {
+const bulk = async (action: 'skip_problems' | 'restore' | 'select_all' | 'unselect_all') => {
     if (!batch.value) return;
     busy.value = true;
     try {
@@ -321,15 +322,15 @@ const saveDates = async () => {
 
 const canConfirm = computed(() => step.value === 'review' && !mapSaving.value && !dateSaving.value && !dateBlocked.value && (summary.value.needs_review ?? 0) === 0 && (summary.value.ready ?? 0) > 0 && (!batch.value?.uses_ocr || ocrChecked.value));
 const methodLabel = (m: string | null) => ({ csv: 'CSV parser', spreadsheet: 'Excel reader', 'pdf-text': 'PDF text (Poppler)', 'pdf-ocr': 'Scanned PDF: Poppler + Tesseract OCR', ocr: 'Image: Tesseract OCR' } as Record<string, string>)[m ?? ''] ?? m ?? '—';
-const statusLabel: Record<string, string> = { ready: 'Ready', needs_review: 'Needs review', duplicate: 'Duplicate', existing: 'Already in inventory', skipped: 'Skipped', imported: 'Imported' };
+const statusLabel: Record<string, string> = { ready: 'Ready', needs_review: 'Needs review', duplicate: 'Duplicate', existing: 'Already in inventory', skipped: 'Not selected', imported: 'Imported' };
 const statusText = (s: string) => (isInventory.value && s === 'duplicate' ? 'Duplicate in file' : statusLabel[s] ?? s);
 // Filter chips: for products, the three groups that matter, plus the others only when they have rows.
 const filterChips = computed<[string, string][]>(() => {
     if (!isInventory.value) {
-        return [['all', 'All'], ['attention', 'Needs attention'], ['ready', 'Ready'], ['needs_review', 'Needs review'], ['duplicate', 'Duplicates'], ['existing', 'Already in inventory'], ['skipped', 'Skipped'], ['imported', 'Imported']];
+        return [['all', 'All'], ['attention', 'Needs attention'], ['ready', 'Ready'], ['needs_review', 'Needs review'], ['duplicate', 'Duplicates'], ['existing', 'Already in inventory'], ['skipped', 'Not selected'], ['imported', 'Imported']];
     }
     const chips: [string, string][] = [['all', 'All'], ['ready', 'Ready'], ['needs_review', 'Needs review'], ['existing', 'Already in inventory']];
-    for (const [k, l] of [['duplicate', 'Duplicate in file'], ['skipped', 'Skipped'], ['imported', 'Imported']] as [string, string][]) {
+    for (const [k, l] of [['duplicate', 'Duplicate in file'], ['skipped', 'Not selected'], ['imported', 'Imported']] as [string, string][]) {
         if ((summary.value[k] ?? 0) > 0) chips.push([k, l]);
     }
 
@@ -362,6 +363,17 @@ const cellPlaceholder = (row: Row, key: string) => {
 };
 const fieldIssue = (row: Row, key: string) => (row.issues ?? []).find((i) => i.field === key && i.level === 'error');
 const locked = (row: Row) => row.status === 'imported' || step.value !== 'review';
+
+/*
+ * Select checkbox: a ticked row is imported. Rows already in inventory or repeated in the file are
+ * unticked; a product row matched by NAME can be ticked to import it anyway as a new product (its
+ * warning stays). A row whose SKU is taken cannot: SKUs are unique, so it needs another SKU first.
+ */
+const flagged = (row: Row) => row.status === 'existing' || row.status === 'duplicate';
+const isSelected = (row: Row) => !row.skipped && !flagged(row) && row.status !== 'imported';
+const canSelect = (row: Row) => !locked(row) && (!flagged(row) || (isInventory.value && !row.values?.sku));
+const selectHint = (row: Row) => (flagged(row) && !canSelect(row) && !locked(row) ? (isInventory.value ? 'Change the SKU to import' : 'Already in this document') : '');
+const forcedImport = (row: Row) => Boolean(row.sources?._forced) && row.status === 'ready';
 
 // Failed batch: what went wrong, by the stage the server recorded.
 const failureLine = computed(() => ({
@@ -574,7 +586,7 @@ watch(needsMapping, (needed) => {
                         <ul class="mt-1 space-y-0.5 text-sm">
                             <li v-if="summary.existing">{{ summary.existing }} already in inventory, not imported.</li>
                             <li v-if="summary.duplicate">{{ summary.duplicate }} duplicate(s) in the file, not imported.</li>
-                            <li v-if="summary.skipped">{{ summary.skipped }} skipped.</li>
+                            <li v-if="summary.skipped">{{ summary.skipped }} not selected.</li>
                             <li v-if="summary.inactive">{{ summary.inactive }} saved as inactive (no unit or selling price). Find them under the "Incomplete" filter.</li>
                             <li>Stock was not imported. Add stock through Stock In or a purchase order.</li>
                         </ul>
@@ -592,8 +604,9 @@ watch(needsMapping, (needed) => {
                         </button>
                         <span class="flex-1"></span>
                         <template v-if="step === 'review'">
-                            <button type="button" class="secondary-button !py-1 text-xs" :disabled="busy || !summary.needs_review" @click="bulk('skip_problems')">Skip all rows needing review</button>
-                            <button type="button" class="secondary-button !py-1 text-xs" :disabled="busy || !summary.skipped" @click="bulk('restore')">Restore skipped</button>
+                            <button type="button" class="secondary-button !py-1 text-xs" :disabled="busy" @click="bulk('select_all')">Select all</button>
+                            <button type="button" class="secondary-button !py-1 text-xs" :disabled="busy" @click="bulk('unselect_all')">Unselect all</button>
+                            <button type="button" class="secondary-button !py-1 text-xs" :disabled="busy || !summary.needs_review" @click="bulk('skip_problems')">Unselect rows needing review</button>
                             <button v-if="batch?.status === 'ready_for_review' && !mapOpen" type="button" class="secondary-button !py-1 text-xs" :disabled="busy" @click="openMapping">Change columns</button>
                         </template>
                     </div>
@@ -730,12 +743,12 @@ watch(needsMapping, (needed) => {
                                     <th v-for="f in fields" :key="f.key" class="px-2 py-2" :class="f.numeric ? 'text-right' : ''">{{ f.label }}</th>
                                     <th v-if="module === 'supplier_quotation'" class="px-2 py-2">Inventory product</th>
                                     <th class="px-2 py-2">{{ isInventory ? 'Status' : 'Status and checks' }}</th>
-                                    <th class="px-2 py-2"><span class="sr-only">Skip</span></th>
+                                    <th class="px-2 py-2">Select</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr v-if="!rows.length"><td :colspan="fields.length + 4" class="px-3 py-6 text-center text-gray-500">No rows in this view.</td></tr>
-                                <tr v-for="row in rows" :key="row.id" class="border-t border-gray-100 align-top" :class="row.skipped ? 'opacity-60' : ''">
+                                <tr v-for="row in rows" :key="row.id" class="border-t border-gray-100 align-top" :class="row.status !== 'imported' && !isSelected(row) ? 'opacity-60' : ''">
                                     <td class="px-2 py-1.5 text-gray-400">{{ row.row_number }}</td>
                                     <td v-for="f in fields" :key="f.key" class="px-1 py-1" :class="f.width">
                                         <input :value="display(row.values?.[f.key])" :disabled="locked(row)" :inputmode="f.numeric ? 'decimal' : 'text'" :placeholder="cellPlaceholder(row, f.key)" :aria-label="`${f.label}, row ${row.row_number}`"
@@ -773,9 +786,12 @@ watch(needsMapping, (needed) => {
                                         <p v-if="!isInventory && row.raw" class="mt-0.5 truncate text-[10px] text-gray-400" :title="row.raw">Read: {{ row.raw }}</p>
                                     </td>
                                     <td class="px-2 py-1.5">
-                                        <label v-if="!locked(row) && row.status !== 'existing'" class="flex items-center gap-1 whitespace-nowrap">
-                                            <input type="checkbox" :checked="row.skipped" class="rounded border-gray-300" @change="patchRow(row, { skipped: ($event.target as HTMLInputElement).checked })" /> Skip
+                                        <label v-if="canSelect(row)" class="flex items-center gap-1 whitespace-nowrap">
+                                            <input type="checkbox" :checked="isSelected(row)" class="rounded border-gray-300" :aria-label="`Import row ${row.row_number}`"
+                                                   @change="patchRow(row, { selected: ($event.target as HTMLInputElement).checked })" /> Select
                                         </label>
+                                        <span v-if="forcedImport(row)" class="mt-1 block whitespace-nowrap text-[10px] text-amber-700">Imported as new</span>
+                                        <span v-else-if="selectHint(row)" class="block max-w-24 text-[10px] text-gray-500">{{ selectHint(row) }}</span>
                                     </td>
                                 </tr>
                             </tbody>

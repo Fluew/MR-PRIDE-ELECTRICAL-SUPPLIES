@@ -2,19 +2,24 @@
 
 namespace App\Services\Suppliers;
 
+use App\Models\BiddingEvent;
 use App\Models\Delivery;
 use App\Models\Supplier;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 /**
- * AHP-based Supplier Evaluation. Every score is calculated from recorded transactions only:
- * - Delivery Performance (40%): inbound deliveries against purchase orders with a promised date,
- *   and the accepted quantity recorded at inspection.
- * - Price Competitiveness (35%): purchase order unit costs of accepted inbound deliveries, compared
- *   with other suppliers' costs for the same product and unit.
- * - Product Quality (25%): accepted / inspected quantities from staff inspections.
+ * AHP-based Supplier Evaluation. Every score is calculated from recorded transactions only, on three criteria:
+ * - Delivery Performance (40%): inbound deliveries against the promised date of their purchase order
+ *   (for an order awarded from bidding, that date is the lead time the supplier quoted in its bid,
+ *   counted from the day the order was sent), and the accepted quantity recorded at inspection.
+ * - Price Competitiveness (35%): each supplier's price against the lowest price offered by another
+ *   supplier, from two kinds of record: the unit prices quoted in closed or awarded biddings (one
+ *   comparison per bidding with two or more quotations), and the purchase order unit costs of accepted
+ *   inbound deliveries for the same product and unit. The score is the average of those comparisons.
+ * - Product Quality (25%): accepted / inspected quantities from the inbound quality inspection.
  * Score = Σ (criterion score × AHP weight). Suppliers with a complete score are ranked (1 = best)
  * to help staff choose; nothing selects or orders from a supplier automatically. A criterion
  * without records is "insufficient data", never 0, and such a supplier gets no final score or
@@ -30,12 +35,14 @@ class SupplierEvaluator
 
         $suppliers = Supplier::where('team_id', $teamId)->orderBy('name')->get(['id', 'name', 'status']);
         $deliveries = $this->deliveries($teamId, $periodStart, $now);
-        $priceGroups = $this->purchaseCostGroups($teamId, $periodStart, $now);
+        // Price comparisons come from biddings and from received purchases; both are real records.
+        $priceGroups = array_merge($this->biddingPriceGroups($teamId, $periodStart, $now), $this->purchaseCostGroups($teamId, $periodStart, $now));
+        $biddingOrders = $this->biddingOrders($deliveries->pluck('purchase_order_id')->filter()->unique()->all());
 
         $results = [];
         foreach ($suppliers as $s) {
             $mine = $deliveries->where('supplier_id', $s->id);
-            $results[$s->id] = $this->evaluate($s, $mine, $priceGroups, $periodStart, $now);
+            $results[$s->id] = $this->evaluate($s, $mine, $priceGroups, $biddingOrders, $periodStart, $now);
         }
 
         return $this->rank($results);
@@ -76,11 +83,11 @@ class SupplierEvaluator
         return 'Needs Improvement';
     }
 
-    private function evaluate(Supplier $s, Collection $deliveries, array $priceGroups, Carbon $from, Carbon $now): array
+    private function evaluate(Supplier $s, Collection $deliveries, array $priceGroups, array $biddingOrders, Carbon $from, Carbon $now): array
     {
         $weights = config('evaluation.supplier.weights');
         $criteria = [
-            $this->deliveryCriterion($deliveries, $weights['delivery']),
+            $this->deliveryCriterion($deliveries, $weights['delivery'], $biddingOrders),
             $this->priceCriterion($s->id, $priceGroups, $weights['price']),
             $this->qualityCriterion($deliveries, $weights['quality']),
         ];
@@ -105,14 +112,15 @@ class SupplierEvaluator
         ];
     }
 
-    private function deliveryCriterion(Collection $deliveries, float $weight): array
+    /** @param  array<int, array{reference: string, quoted_lead_days: int}>  $biddingOrders  awarded bidding per purchase order id */
+    private function deliveryCriterion(Collection $deliveries, float $weight, array $biddingOrders = []): array
     {
         $split = config('evaluation.supplier.delivery_split');
         $timed = $deliveries->filter(fn ($d) => $d->promised_delivery_date !== null);
         $onTime = $timed->filter(fn ($d) => $d->delivery_date->lte($d->promised_delivery_date));
 
         // Quantity fulfillment per purchase order, from inspected deliveries (accepted units, capped at the ordered quantity).
-        $byPo = $deliveries->filter(fn ($d) => $d->purchase_order_id && $d->accepted_quantity !== null)->groupBy('purchase_order_id');
+        $byPo = $deliveries->filter(fn ($d) => $d->purchase_order_id && $d->inspection_valid)->groupBy('purchase_order_id');
         $ordered = 0;
         $accepted = 0;
         $poRows = [];
@@ -126,19 +134,26 @@ class SupplierEvaluator
 
         $base = [
             'key' => 'delivery', 'label' => 'Inbound Delivery Performance', 'weight' => $weight,
-            'source' => 'Inbound deliveries linked to purchase orders with a promised delivery date, and inspection results',
+            'source' => 'Inbound deliveries against the promised date of their purchase order (the lead time quoted in the awarded bid, from the day the order was sent), and inspection results',
             'inputs' => [
                 'completed_deliveries' => $timed->count(),
                 'on_time_deliveries' => $onTime->count(),
                 'ordered_quantity' => $ordered,
                 'accepted_quantity' => $accepted,
                 'excluded_without_promised_date' => $deliveries->count() - $timed->count(),
+                'bidding_deliveries' => $timed->filter(fn ($d) => isset($biddingOrders[$d->purchase_order_id]))->count(),
                 'records' => $timed->map(fn ($d) => [
                     'delivery_number' => $d->delivery_number,
                     'po_number' => $d->po_number,
                     'promised' => $d->promised_delivery_date->toDateString(),
                     'delivered' => $d->delivery_date->toDateString(),
                     'on_time' => $d->delivery_date->lte($d->promised_delivery_date),
+                    // For an order awarded from bidding: the lead time the supplier quoted, against the days it actually took.
+                    'bidding' => $biddingOrders[$d->purchase_order_id]['reference'] ?? null,
+                    'quoted_lead_days' => $biddingOrders[$d->purchase_order_id]['quoted_lead_days'] ?? null,
+                    'actual_lead_days' => isset($biddingOrders[$d->purchase_order_id]) && $d->po_start
+                        ? (int) $d->po_start->startOfDay()->diffInDays($d->delivery_date->startOfDay(), false)
+                        : null,
                 ])->values()->all(),
                 'purchase_orders' => $poRows,
             ],
@@ -178,6 +193,7 @@ class SupplierEvaluator
             }
             $lowest = min(array_column($g['prices'], 'unit_price'));
             $comparisons[] = [
+                'source' => $g['source'] ?? 'purchase',
                 'product' => $g['product'],
                 'basis' => $g['basis'],
                 'own_price' => $mine['unit_price'],
@@ -189,26 +205,26 @@ class SupplierEvaluator
 
         $base = [
             'key' => 'price', 'label' => 'Price Competitiveness', 'weight' => $weight,
-            'source' => 'Purchase order unit costs of accepted inbound deliveries in the evaluation period, for the same product and unit',
+            'source' => 'Unit prices quoted in closed or awarded biddings, and purchase order unit costs of accepted inbound deliveries, in the evaluation period',
             'inputs' => ['comparisons' => $comparisons],
         ];
 
         if (! $comparisons) {
             return $base + ['available' => false, 'score' => null, 'weighted' => null,
-                'reason' => 'Insufficient data: no accepted delivery from this supplier can be compared with another supplier\'s accepted delivery of the same product and unit.'];
+                'reason' => 'Insufficient data: this supplier has no bidding with two or more quotations, and no accepted delivery that can be compared with another supplier\'s for the same product and unit.'];
         }
 
         $score = round(array_sum(array_column($comparisons, 'score')) / count($comparisons), 2);
         $parts = array_map(fn ($c) => '('.number_format($c['lowest_price'], 2).' / '.number_format($c['own_price'], 2).') × 100 = '.number_format($c['score'], 2), $comparisons);
 
         return $base + $this->scored($score, $weight,
-            'Average over comparable products of (Lowest Purchase Unit Cost / Supplier\'s Purchase Unit Cost) × 100',
+            'Average over comparable biddings and products of (Lowest Unit Price / Supplier\'s Unit Price) × 100',
             implode('; ', $parts).(count($comparisons) > 1 ? '; average = '.number_format($score, 2) : ''));
     }
 
     private function qualityCriterion(Collection $deliveries, float $weight): array
     {
-        $inspected = $deliveries->filter(fn ($d) => $d->accepted_quantity !== null && $d->rejected_quantity !== null);
+        $inspected = $deliveries->filter(fn ($d) => $d->inspection_valid);
         $acc = (int) $inspected->sum('accepted_quantity');
         $rej = (int) $inspected->sum('rejected_quantity');
         $total = $acc + $rej;
@@ -269,7 +285,8 @@ class SupplierEvaluator
             })
             ->where('deliveries.team_id', $teamId)
             ->whereBetween('deliveries.delivery_date', [$from->toDateString(), $to->toDateString()])
-            ->where(fn ($q) => $q->whereNull('deliveries.status')->orWhere('deliveries.status', '!=', 'Cancelled'))
+            ->where('deliveries.status', 'Delivered')
+            ->whereHas('inboundDelivery', fn ($q) => $q->where('status', 'confirmed')->where('team_id', $teamId))
             ->orderBy('deliveries.id')
             ->get([
                 'deliveries.*',
@@ -277,9 +294,18 @@ class SupplierEvaluator
                 'purchase_orders.quantity as po_quantity',
                 'purchase_orders.promised_delivery_date',
                 'purchase_orders.supplier_id as po_supplier_id',
+                'purchase_orders.sent_at as po_sent_at',
+                'purchase_orders.po_date as po_date',
             ])
-            ->each(function ($d) {
+            ->each(function ($d) use ($to) {
+                $d->inspection_valid = $d->inspection_result !== null && $d->inspected_on !== null
+                    && $d->inspected_on->lte($to) && $d->inspected_on->gte($d->delivery_date)
+                    && $d->accepted_quantity !== null && $d->rejected_quantity !== null
+                    && $d->accepted_quantity >= 0 && $d->rejected_quantity >= 0
+                    && $d->accepted_quantity + $d->rejected_quantity === $d->quantity;
                 $d->supplier_id = $d->supplier_id ?: $d->po_supplier_id;
+                // Lead time counts from the day the order was sent to the supplier (the order date when that is not recorded).
+                $d->po_start = $d->po_sent_at ? Carbon::parse($d->po_sent_at) : ($d->po_date ? Carbon::parse($d->po_date) : null);
                 $d->promised_delivery_date = $d->promised_delivery_date ? Carbon::parse($d->promised_delivery_date) : null;
                 if (! $d->purchase_order_id) {
                     $d->promised_delivery_date = null;
@@ -300,18 +326,29 @@ class SupplierEvaluator
     {
         $rows = Delivery::query()
             ->join('purchase_orders', 'purchase_orders.id', '=', 'deliveries.purchase_order_id')
-            ->join('suppliers', 'suppliers.id', '=', 'purchase_orders.supplier_id')
+            // The supplier that delivered (as in the delivery and quality criteria); the order's when not recorded.
+            ->join('suppliers', 'suppliers.id', '=', DB::raw('COALESCE(deliveries.supplier_id, purchase_orders.supplier_id)'))
             ->join('products', 'products.id', '=', 'purchase_orders.product_id')
             ->where('deliveries.team_id', $teamId)
-            ->where(fn ($q) => $q->whereNull('deliveries.status')->orWhere('deliveries.status', '!=', 'Cancelled'))
+            ->where('deliveries.status', 'Delivered')
+            ->whereHas('inboundDelivery', fn ($q) => $q->where('status', 'confirmed')->where('team_id', $teamId))
+            ->whereNull('purchase_orders.deleted_at')
+            ->where('purchase_orders.team_id', $teamId)
+            ->where('suppliers.team_id', $teamId)
+            ->where('products.team_id', $teamId)
             ->where('deliveries.accepted_quantity', '>', 0)
+            ->whereNotNull('deliveries.inspection_result')
+            ->where('deliveries.inspected_on', '<=', $to->toDateString())
+            ->whereColumn('deliveries.inspected_on', '>=', 'deliveries.delivery_date')
+            ->where('deliveries.rejected_quantity', '>=', 0)
+            ->whereRaw('deliveries.accepted_quantity + deliveries.rejected_quantity = deliveries.quantity')
             ->where('purchase_orders.unit_cost', '>', 0)
             ->whereNull('suppliers.deleted_at')
             ->whereBetween('deliveries.delivery_date', [$from->toDateString(), $to->toDateString()])
             ->orderBy('deliveries.delivery_date')->orderBy('deliveries.id')
             ->get([
                 'deliveries.purchase_order_id', 'deliveries.delivery_number', 'deliveries.delivery_date', 'deliveries.accepted_quantity',
-                'purchase_orders.po_number', 'purchase_orders.unit_cost', 'purchase_orders.unit_of_measure', 'purchase_orders.supplier_id', 'purchase_orders.product_id',
+                'purchase_orders.po_number', 'purchase_orders.unit_cost', 'purchase_orders.unit_of_measure', 'suppliers.id as supplier_id', 'purchase_orders.product_id',
                 'suppliers.name as supplier_name', 'products.name as product_name', 'products.sku as product_sku',
             ])
             // The same delivery recorded twice counts once (as in the delivery criterion).
@@ -332,6 +369,7 @@ class SupplierEvaluator
         }
 
         return array_values(array_map(fn ($g) => [
+            'source' => 'purchase',
             'product' => $g['product'],
             'basis' => $g['basis'],
             'prices' => array_values(array_map(fn ($r) => [
@@ -342,5 +380,56 @@ class SupplierEvaluator
                 'receipts' => $r['receipts'],
             ], $g['suppliers'])),
         ], $groups));
+    }
+
+    /**
+     * One price comparison per bidding (closed or awarded, closed within the period) that has two or more
+     * recorded quotations: every bidder's quoted unit price for the same item. A cancelled or deleted bidding,
+     * or one still collecting quotations, is not a finished comparison and is left out.
+     *
+     * @return list<array{source: string, product: array, basis: string, prices: list<array>}>
+     */
+    private function biddingPriceGroups(int $teamId, Carbon $from, Carbon $to): array
+    {
+        $events = BiddingEvent::where('team_id', $teamId)->whereIn('status', [BiddingEvent::CLOSED, BiddingEvent::AWARDED])
+            ->whereBetween('closed_at', [$from->copy()->startOfDay(), $to->copy()->endOfDay()])
+            ->with(['bids.supplier:id,name', 'purchaseRequest.product:id,name,sku'])->orderBy('id')->get();
+
+        $groups = [];
+        foreach ($events as $event) {
+            if ($event->bids->count() < 2) {
+                continue;
+            }
+            $pr = $event->purchaseRequest;
+            $groups[] = [
+                'source' => 'bidding',
+                'product' => ['id' => (int) ($pr?->product_id ?? 0), 'name' => $pr?->product?->name ?? $pr?->product_description ?? $event->reference, 'sku' => $pr?->product?->sku],
+                'basis' => "bidding {$event->reference}",
+                'prices' => $event->bids->map(fn ($b) => [
+                    'supplier_id' => (int) $b->supplier_id, 'supplier' => $b->supplier?->name, 'unit_price' => round((float) $b->unit_price, 2),
+                    'quantity' => (int) $b->quantity, 'receipts' => [],
+                ])->values()->all(),
+            ];
+        }
+
+        return $groups;
+    }
+
+    /**
+     * Purchase orders that were awarded from a bidding, with the lead time the winner quoted.
+     *
+     * @param  list<int>  $purchaseOrderIds
+     * @return array<int, array{reference: string, quoted_lead_days: int}> keyed by purchase order id
+     */
+    private function biddingOrders(array $purchaseOrderIds): array
+    {
+        if ($purchaseOrderIds === []) {
+            return [];
+        }
+
+        return BiddingEvent::whereIn('purchase_order_id', $purchaseOrderIds)->with('awardedBid:id,lead_time_days')->get()
+            ->filter(fn ($e) => $e->awardedBid !== null)
+            ->mapWithKeys(fn ($e) => [$e->purchase_order_id => ['reference' => $e->reference, 'quoted_lead_days' => (int) $e->awardedBid->lead_time_days]])
+            ->all();
     }
 }

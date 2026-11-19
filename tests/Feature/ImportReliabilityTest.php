@@ -314,6 +314,84 @@ test('supplier quotation columns can be chosen by hand and the quotation details
 
 // --- Duplicate products ----------------------------------------------------------------------
 
+test('a row matched by name can be selected and is imported as a new product with its warning', function () {
+    $lamp = Product::create(['team_id' => $this->team->id, 'sku' => 'LMP-1', 'name' => 'LED Bulb 9W', 'brand' => 'Philips', 'price' => 100, 'cost_price' => 60, 'stock' => 4, 'unit' => 'pcs', 'is_active' => true]);
+    $csv = "SKU,Product Name,Brand,Unit,Selling Price\n"
+        .",LED Bulb 9W,,pcs,120\n"          // row 2: same name as LMP-1
+        ."LMP-1,Lamp copy,,pcs,90\n"        // row 3: SKU already taken
+        .",Junction Box 4x4,,pcs,35\n"      // row 4
+        .",Junction box 4x4,,pcs,35\n";     // row 5: same as row 4
+
+    $batch = relUpload($this, relCsv($csv));
+    $rows = fn () => $batch->rows()->orderBy('row_number')->get()->values();
+    $select = fn (ImportRow $row, bool $on) => relAs($this)->patchJson("{$this->url}/batches/{$batch->id}/rows/{$row->id}", ['selected' => $on])->assertOk();
+
+    expect($rows()->pluck('status')->all())->toBe([ImportRow::EXISTING, ImportRow::EXISTING, ImportRow::READY, ImportRow::DUPLICATE]);
+
+    // Selecting the name matches imports them, still with a warning.
+    $select($rows()[0], true);
+    $select($rows()[3], true);
+    $r = $rows();
+    expect($r[0]->status)->toBe(ImportRow::READY)->and($r[0]->matched_product_id)->toBeNull()
+        ->and(collect($r[0]->issues)->firstWhere('field', 'name')['level'])->toBe('warning')
+        ->and(relMessages($r[0]))->toContain('already exists (SKU LMP-1). Selected: it will be imported as a new product')
+        ->and($r[3]->status)->toBe(ImportRow::READY)
+        ->and(relMessages($r[3]))->toContain('Same product as row 4. Selected: both rows will be imported');
+
+    // A taken SKU cannot be forced: the row stays "already in inventory".
+    $select($r[1], true);
+    expect($rows()[1]->status)->toBe(ImportRow::EXISTING)
+        ->and($rows()[1]->sources)->not->toHaveKey('_selected');
+
+    // Unselecting a forced row puts it back; selecting it again restores the import.
+    $select($rows()[3], false);
+    expect($rows()[3]->status)->toBe(ImportRow::DUPLICATE)->and($rows()[3]->skipped)->toBeFalse();
+    $select($rows()[3], true);
+
+    // Unselecting an ordinary row skips it; selecting it brings it back.
+    $select($rows()[2], false);
+    expect($rows()[2]->status)->toBe(ImportRow::SKIPPED);
+    $select($rows()[2], true);
+    expect($rows()[2]->status)->toBe(ImportRow::READY)->and($rows()[2]->sources)->not->toHaveKey('_forced')
+        // Row 5 kept its selection while row 4 was skipped (when it was not a repeat).
+        ->and($rows()[3]->status)->toBe(ImportRow::READY)->and($rows()[3]->sources['_forced'] ?? null)->toBe('yes');
+
+    relAs($this)->postJson("{$this->url}/batches/{$batch->id}/confirm")->assertOk()->assertJson(['created' => 3]);
+
+    expect(Product::where('name', 'LED Bulb 9W')->count())->toBe(2)
+        ->and(Product::where('name', 'like', 'Junction%')->count())->toBe(2)
+        ->and(Product::where('sku', 'LMP-1')->count())->toBe(1)
+        ->and($lamp->fresh()->stock)->toBe(4)
+        ->and(Product::where('name', 'LED Bulb 9W')->where('id', '!=', $lamp->id)->value('sku'))->not->toBe('LMP-1');
+});
+
+test('select all and unselect all change every row at once', function () {
+    Product::create(['team_id' => $this->team->id, 'sku' => 'LMP-1', 'name' => 'LED Bulb 9W', 'price' => 100, 'cost_price' => 60, 'stock' => 4, 'unit' => 'pcs', 'is_active' => true]);
+    $csv = "SKU,Product Name,Unit,Selling Price\n"
+        .",LED Bulb 9W,pcs,120\n"        // same name as LMP-1
+        ."LMP-1,Lamp copy,pcs,90\n"      // SKU taken: never selectable
+        .",Junction Box 4x4,pcs,35\n"
+        .",Junction box 4x4,pcs,35\n";   // repeats the row above
+
+    $batch = relUpload($this, relCsv($csv));
+    $statuses = fn () => $batch->rows()->orderBy('row_number')->pluck('status')->all();
+    $bulk = fn (string $action) => relAs($this)->postJson("{$this->url}/batches/{$batch->id}/bulk", ['action' => $action])->assertOk();
+
+    // Both work even when nothing is skipped and no row needs review.
+    $bulk('unselect_all');
+    expect($statuses())->toBe(array_fill(0, 4, ImportRow::SKIPPED));
+
+    $bulk('select_all');
+    expect($statuses())->toBe([ImportRow::READY, ImportRow::EXISTING, ImportRow::READY, ImportRow::READY]);
+
+    $bulk('select_all'); // again: no change
+    expect($statuses())->toBe([ImportRow::READY, ImportRow::EXISTING, ImportRow::READY, ImportRow::READY]);
+
+    relAs($this)->postJson("{$this->url}/batches/{$batch->id}/confirm")->assertOk()->assertJson(['created' => 3]);
+    expect(Product::where('name', 'LED Bulb 9W')->count())->toBe(2)
+        ->and(Product::where('sku', 'LMP-1')->count())->toBe(1);
+});
+
 test('rows without a SKU never create a second product with the same name', function () {
     $lamp = Product::create(['team_id' => $this->team->id, 'sku' => 'LMP-1', 'name' => 'LED Bulb 9W', 'brand' => 'Philips', 'price' => 100, 'cost_price' => 60, 'stock' => 4, 'unit' => 'pcs', 'is_active' => true]);
     $csv = "SKU,Product Name,Brand,Unit,Selling Price\n"

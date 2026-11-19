@@ -92,7 +92,7 @@ const dashboardUrl = computed(() => {
 <template>
     <Sidebar collapsible="icon" variant="inset">
         <SidebarHeader
-            class="p-3 transition-all duration-300 ease-in-out group-data-[collapsible=icon]:p-2 group-data-[collapsible=icon]:items-center"
+            class="p-3 transition-[padding] duration-200 group-data-[collapsible=icon]:p-2 group-data-[collapsible=icon]:items-center"
         >
             <SidebarMenu>
                 <SidebarMenuItem>
@@ -113,7 +113,7 @@ const dashboardUrl = computed(() => {
             </SidebarMenu>
         </SidebarHeader>
         <SidebarContent class="overflow-y-auto px-3 py-2 transition-all duration-300 ease-in-out group-data-[collapsible=icon]:px-1.5 group-data-[collapsible=icon]:py-2">
-            <LineSidebar :items="operations" label="Operations" />
+            <LineSidebar :items="operations" label="Workspace" :display-numbers="false" :max-shift="0" />
         </SidebarContent>
         <SidebarFooter
             class="p-3 transition-all duration-300 ease-in-out group-data-[collapsible=icon]:p-2 group-data-[collapsible=icon]:items-center"

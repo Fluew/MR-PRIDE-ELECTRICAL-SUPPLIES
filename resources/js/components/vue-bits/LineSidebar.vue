@@ -114,7 +114,7 @@ onBeforeUnmount(() => {
     <!-- Category Eyebrow Label -->
     <div
       v-if="label"
-      class="mb-2 px-3 text-[10px] font-bold tracking-[0.16em] text-white/50 uppercase transition-opacity duration-300 group-data-[collapsible=icon]:hidden"
+      class="mb-2 px-3 text-[11px] font-medium tracking-wide text-white/60 transition-opacity duration-300 group-data-[collapsible=icon]:hidden"
     >
       {{ label }}
     </div>
@@ -126,7 +126,7 @@ onBeforeUnmount(() => {
       @mouseleave="handleMouseLeave"
       @wheel.passive="forgetPositions"
       class="relative flex flex-col gap-1 w-full"
-      aria-label="Admin Operations"
+      aria-label="Workspace navigation"
     >
       <div
         v-for="(item, index) in items"
@@ -143,7 +143,7 @@ onBeforeUnmount(() => {
           class="relative flex items-center w-full min-h-11 rounded-xl px-3 transition-colors duration-200 outline-none focus-visible:ring-2 focus-visible:ring-[#F8B803] group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:size-10 group-data-[collapsible=icon]:mx-auto"
           :class="[
             isCurrentUrl(item.href)
-              ? 'bg-[#F8B803] font-bold text-gray-950 shadow-sm'
+              ? 'bg-white/10 font-semibold text-white ring-1 ring-inset ring-white/15'
               : 'text-white/80 hover:text-white hover:bg-white/10'
           ]"
           :style="isCollapsed ? undefined : { transform: `translateX(calc(var(--proximity, 0) * ${maxShift}px))` }"
@@ -155,7 +155,7 @@ onBeforeUnmount(() => {
             class="text-[10px] font-mono tracking-wider transition-colors duration-200 mr-2 group-data-[collapsible=icon]:hidden"
             :class="[
               isCurrentUrl(item.href)
-                ? 'text-gray-950/70 font-bold'
+                ? 'text-[#F8B803] font-medium'
                 : 'text-white/40 group-hover/item:text-[#F8B803]'
             ]"
           >
@@ -169,10 +169,10 @@ onBeforeUnmount(() => {
             class="size-4.5 shrink-0 transition-transform duration-200"
             :class="[
               isCurrentUrl(item.href)
-                ? 'text-gray-950 stroke-[2.2]'
+                ? 'text-[#F8B803] stroke-[2]'
                 : 'text-white/85 group-hover/item:text-white stroke-[1.8]'
             ]"
-            :style="isCurrentUrl(item.href) ? undefined : { transform: 'scale(calc(1 + var(--proximity, 0) * 0.15))' }"
+
           />
 
           <!-- Navigation Label Title -->
@@ -180,7 +180,7 @@ onBeforeUnmount(() => {
             class="ml-3 truncate text-xs sm:text-sm tracking-tight transition-opacity duration-200 group-data-[collapsible=icon]:hidden"
             :class="[
               isCurrentUrl(item.href)
-                ? 'text-gray-950 font-bold'
+                ? 'text-white font-semibold'
                 : 'text-white/85 group-hover/item:text-white font-medium'
             ]"
           >
@@ -194,6 +194,6 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .line-sidebar-container {
-  will-change: transform;
+  min-width: 0;
 }
 </style>

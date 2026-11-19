@@ -114,7 +114,8 @@ test('confirming adds accepted units to stock, creates the missing product with 
         ->and($cable->price)->toBeNull()
         ->and($cable->supplier_id)->toBe($this->supplier->id)
         ->and($cable->unit)->toBe('roll')
-        ->and($cable->status)->toBe('Incomplete')
+        ->and($cable->status)->toBe('Low Stock') // its stock level; inactive (no selling price) until completed
+        ->and($cable->is_active)->toBeFalse()
         ->and($this->poCable->fresh()->product_id)->toBe($cable->id)
         ->and(SupplierSkuMapping::productFor($this->team->id, $this->supplier->id, 'SUR-THHN12')?->id)->toBe($cable->id);
 
@@ -158,7 +159,7 @@ test('products received on an inbound delivery appear in the Inventory module wi
         ->assertInertia(function ($page) use ($rows, $cable) {
             $list = $rows($page);
             expect($list->get($cable->id)['stock'] ?? null)->toBe(6)
-                ->and($list->get($cable->id)['status'] ?? null)->toBe('Incomplete')
+                ->and($list->get($cable->id)['status'] ?? null)->toBe('Low Stock')
                 ->and($list->get($this->breaker->id)['stock'] ?? null)->toBe(40);
             $page->where('summary.total', 2)
                 ->where('summary.incomplete', 1)

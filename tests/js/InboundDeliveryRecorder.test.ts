@@ -115,6 +115,39 @@ describe('Record Inbound P.O. Delivery', () => {
         expect(row(1).text()).toContain('Only 6 still owed');
     });
 
+    it('pre-selects the purchase order supplier and sends the supplier chosen before confirming', async () => {
+        mountRecorder({ suppliers: [{ id: 3, name: 'Surangel Supply' }, { id: 7, name: 'Ampere Trading' }] });
+        await wrapper.get('[data-test="po-option-PO-7001"]').trigger('click');
+
+        const select = wrapper.get('[data-test="supplier-select"]');
+        expect((select.element as HTMLSelectElement).value).toBe('3'); // from the purchase order
+        expect(select.findAll('option').map((o) => o.text())).toEqual(['Select a supplier', 'Surangel Supply', 'Ampere Trading']);
+
+        await select.setValue('7');
+        expect(wrapper.get('[data-test="supplier-help"]').text()).toContain('Purchase order supplier: Surangel Supply');
+
+        await row(0).get('#ib-rec-0').setValue(5);
+        await row(0).get('[data-test="inspected-0"]').setValue(true);
+        await wrapper.get('[data-test="inbound-recorder"]').trigger('submit');
+
+        expect(sent).toHaveLength(1);
+        expect(sent[0].data.supplier_id).toBe(7);
+        expect(sent[0].data.po_number).toBe('PO-7001');
+    });
+
+    it('does not confirm without a supplier', async () => {
+        mountRecorder({ suppliers: [{ id: 7, name: 'Ampere Trading' }], orders: [{ ...ORDERS[0], supplier: null }] });
+        await wrapper.get('[data-test="po-option-PO-7001"]').trigger('click');
+        await row(0).get('#ib-rec-0').setValue(5);
+        await row(0).get('[data-test="inspected-0"]').setValue(true);
+
+        expect(wrapper.get('[data-test="supplier-help"]').text()).toBe('Select the supplier that delivered.');
+        expect(confirmButton().attributes('disabled')).toBeDefined();
+
+        await wrapper.get('[data-test="supplier-select"]').setValue('7');
+        expect(confirmButton().attributes('disabled')).toBeUndefined();
+    });
+
     it('corrects a confirmed delivery with a reason', async () => {
         mountRecorder({
             delivery: {
@@ -126,6 +159,9 @@ describe('Record Inbound P.O. Delivery', () => {
             },
         });
         expect(wrapper.text()).toContain('Correct delivery DEL-110926-001');
+        // A confirmed delivery keeps its supplier: shown, not editable.
+        expect(wrapper.get('[data-test="supplier-readonly"]').text()).toBe('Surangel Supply');
+        expect(wrapper.find('[data-test="supplier-select"]').exists()).toBe(false);
         await row(0).get('#ib-acc-0').setValue(8);
         expect((row(0).get('#ib-rej-0').element as HTMLInputElement).value).toBe('2');
         await row(0).get('#ib-rem-0').setValue('Cracked housing');

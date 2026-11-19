@@ -18,6 +18,9 @@ export interface ReorderRecommendation {
 
 /** SMA forecast for the forecasting period staff chose (3 Months, 6 Months, 1 Year). */
 export interface PriorityForecast {
+    selected_window?: number;
+    best_window?: number | null;
+    accuracy?: { mae: number | null; mape: number | null; rmse: number | null; count: number } | null;
     months: number;
     period: string;
     monthly: number | null;
@@ -49,6 +52,14 @@ const has = (key: string) => props.priority.criteria.find((c) => c.key === key)?
             <div><dt class="text-xs text-gray-500">Units moved ({{ input('movement').months }} mo)</dt><dd class="font-mono">{{ has('movement') ? input('movement').units : 'Insufficient data' }}</dd></div>
             <div><dt class="text-xs text-gray-500">Verified suppliers</dt><dd class="font-mono">{{ input('supplier_availability').verified ? `${input('supplier_availability').available} of ${input('supplier_availability').verified} available` : 'None recorded' }}</dd></div>
         </dl>
+
+        <p v-if="priority.forecast?.accuracy" class="mb-4 text-xs text-gray-500">
+            Monthly SMA window: {{ priority.forecast.selected_window }}.
+            Holdout MAE: {{ priority.forecast.accuracy.mae?.toFixed(2) ?? 'N/A' }};
+            MAPE: {{ priority.forecast.accuracy.mape?.toFixed(2) ?? 'N/A' }}%;
+            RMSE: {{ priority.forecast.accuracy.rmse?.toFixed(2) ?? 'N/A' }}
+            ({{ priority.forecast.accuracy.count }} evaluated periods).
+        </p>
 
         <ScoreBreakdown :evaluation="priority">
             <template #inputs="{ criterion }">

@@ -8,6 +8,7 @@ use App\Models\PurchaseRequest;
 use App\Models\Supplier;
 use App\Models\Team;
 use App\Services\Forecast\SmaForecaster;
+use App\Services\Inventory\SupplierCatalog\SupplierCatalogQuery;
 use App\Services\Procurement\ProcurementWorkflow;
 use App\Services\Suppliers\SupplierEvaluator;
 use Illuminate\Database\Eloquent\Model;
@@ -73,12 +74,14 @@ class ProcurementWorkflowController extends Controller
         $data = $request->validate([
             'decision' => ['required', Rule::in(['approve', 'reject'])],
             'remarks' => ['nullable', 'string', 'max:1000'],
+            'for_bidding' => ['sometimes', 'boolean'],
         ]);
+        $forBidding = $request->boolean('for_bidding') && $data['decision'] === 'approve';
 
-        return $this->runWorkflow(function () use ($pr, $request, $data) {
-            $this->workflow->review($pr, $request->user(), $data['decision'] === 'approve', $data['remarks'] ?? null);
+        return $this->runWorkflow(function () use ($pr, $request, $data, $forBidding) {
+            $this->workflow->review($pr, $request->user(), $data['decision'] === 'approve', $data['remarks'] ?? null, $forBidding);
 
-            return "{$pr->request_number} ".($data['decision'] === 'approve' ? 'approved.' : 'rejected.');
+            return "{$pr->request_number} ".($data['decision'] === 'approve' ? ($forBidding ? 'approved for bidding. Create a bidding event to request supplier quotations.' : 'approved.') : 'rejected.');
         });
     }
 
@@ -179,6 +182,10 @@ class ProcurementWorkflowController extends Controller
             'deliveries' => $deliveries,
             'rejection_categories' => Delivery::REJECTION_CATEGORIES,
             'suppliers' => $po->status === PurchaseOrder::DRAFT ? $this->rankedSuppliers($po->team_id) : [],
+            // Supplier Product Catalog costs of this product (information for the draft; the supplier and agreed price stay the staff's choice).
+            'catalog_prices' => $po->status === PurchaseOrder::DRAFT && $po->product_id
+                ? (app(SupplierCatalogQuery::class)->forInventoryProducts($po->team_id, [$po->product_id])[$po->product_id] ?? [])
+                : [],
             'resolutions' => Delivery::RESOLUTIONS,
         ]);
     }

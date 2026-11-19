@@ -73,7 +73,11 @@ class ProcurementWorkflow
 
                     continue;
                 }
-                $product = Product::where('team_id', $team->id)->where('is_active', true)->find($line['product_id'])
+                // Active products, and products only waiting for missing details (e.g. a selling price):
+                // they can still be bought. Products an admin deactivated cannot.
+                $product = Product::where('team_id', $team->id)
+                    ->where(fn ($q) => $q->where('is_active', true)->orWhereNotNull('missing_fields'))
+                    ->find($line['product_id'])
                     ?? throw new WorkflowException('A selected product is not an active product of this team.', "lines.{$i}.product_id");
                 $qty = (int) $line['quantity'];
                 if ($qty < 1) {
@@ -202,7 +206,11 @@ class ProcurementWorkflow
         });
     }
 
-    public function review(PurchaseRequest $pr, User $admin, bool $approve, ?string $remarks): PurchaseRequest
+    /**
+     * @param  bool  $forBidding  approve but do not draft a purchase order: the request waits, Approved, for a
+     *                            bidding event, and the award creates the order (see BiddingWorkflow).
+     */
+    public function review(PurchaseRequest $pr, User $admin, bool $approve, ?string $remarks, bool $forBidding = false): PurchaseRequest
     {
         if (! $admin->isAdmin()) {
             throw new WorkflowException('Only an administrator can approve or reject purchase requests.');
@@ -212,7 +220,7 @@ class ProcurementWorkflow
             throw new WorkflowException('Give the reason for rejecting this request.', 'remarks');
         }
 
-        $pr = DB::transaction(function () use ($pr, $admin, $approve, $remarks) {
+        $pr = DB::transaction(function () use ($pr, $admin, $approve, $remarks, $forBidding) {
             $pr = PurchaseRequest::lockForUpdate()->findOrFail($pr->id);
             if ($pr->status !== PurchaseRequest::PENDING) {
                 throw new WorkflowException("{$pr->request_number} is {$pr->status}; only a request pending approval can be reviewed.");
@@ -226,7 +234,10 @@ class ProcurementWorkflow
             AuditLogger::record($approve ? 'purchase_request.approved' : 'purchase_request.rejected',
                 "{$pr->request_number} ".($approve ? 'approved' : 'rejected').' by '.$admin->name.($remarks ? ": {$remarks}" : '.'), $pr, [], $admin);
 
-            if ($approve) {
+            if ($approve && $forBidding) {
+                AuditLogger::record('purchase_request.sent_to_bidding', "{$pr->request_number} approved for supplier bidding: no purchase order until a bidding is awarded.", $pr, [], $admin);
+                PurchaseRequestApproved::dispatch($pr, $admin);
+            } elseif ($approve) {
                 PurchaseRequestApproved::dispatch($pr, $admin);
                 // Approval moves straight on: the draft order is created in the same transaction,
                 // so an approved request can never be left without its purchase order.
@@ -490,6 +501,7 @@ class ProcurementWorkflow
                 throw new WorkflowException('Enter the agreed unit price before sending the purchase order.', 'unit_cost');
             }
             $po->update(['status' => PurchaseOrder::SENT, 'sent_at' => now()]);
+            app(BiddingWorkflow::class)->alignPromisedDateToSend($po->refresh());
             AuditLogger::record('purchase_order.sent', "Purchase order {$po->po_number} sent to the supplier.", $po, [], $user);
             PurchaseOrderSent::dispatch($po, $user);
         });

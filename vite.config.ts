@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 import vue from '@vitejs/plugin-vue';
 import laravel from 'laravel-vite-plugin';
 import { bunny } from 'laravel-vite-plugin/fonts';
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -22,7 +22,9 @@ function precompressAssets(): Plugin {
             assetsDir = config.build.ssr ? '' : path.resolve(config.root, config.build.outDir, config.build.assetsDir);
         },
         closeBundle() {
-            if (!assetsDir) return;
+            // closeBundle also runs after a failed build, when nothing was emitted. Throwing here
+            // would replace the real build error with an ENOENT for the missing directory.
+            if (!assetsDir || !existsSync(assetsDir)) return;
             for (const file of readdirSync(assetsDir)) {
                 if (!/\.(js|css|svg)$/.test(file)) continue;
                 const full = path.join(assetsDir, file);

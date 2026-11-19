@@ -18,12 +18,15 @@ import SpotlightCard from '@/components/vue-bits/SpotlightCard.vue';
 import SpecularButton from '@/components/ui/SpecularButton.vue';
 import ProductListGuide from '@/components/quotation/ProductListGuide.vue';
 import PublicLayout from '@/layouts/PublicLayout.vue';
-import { parseQuantity } from '@/lib/quantity';
+import { digitsOnly, emailError, phoneError, requiredTextError, wholeQuantityError, type PhoneRules } from '@/lib/validation';
 import { store } from '@/routes/quotations';
 import { extract as extractProductList } from '@/routes/quotations/product-list';
 
 const props = defineProps<{
     brands?: string[];
+    phoneRules: PhoneRules;
+    /** Extensions the server reads (one list, from the server). */
+    productFileTypes?: string[];
 }>();
 
 // One brand row: a catalog brand (Description + Quantity), or "Others" (Brand Name + Description + Quantity).
@@ -40,6 +43,8 @@ const form = useForm({
     company: '',
     contactName: '',
     email: '',
+    // Chosen from the list (never typed); the number below is digits only.
+    phoneCountry: props.phoneRules.default,
     phone: '',
     projectType: 'Commercial Building',
     timeline: '1-3 months',
@@ -56,7 +61,7 @@ const formErrors = computed(() => form.errors as Record<string, string | undefin
 
 // ------------------------------------------------------------------ product-list files
 
-const PRODUCT_FILE_EXTENSIONS = ['pdf', 'xls', 'xlsx', 'csv', 'jpg', 'jpeg', 'png'];
+const PRODUCT_FILE_EXTENSIONS = props.productFileTypes?.length ? props.productFileTypes : ['pdf', 'xls', 'xlsx', 'csv', 'jpg', 'jpeg', 'png'];
 const PRODUCT_FILE_ACCEPT = PRODUCT_FILE_EXTENSIONS.map((e) => `.${e}`).join(',');
 const MAX_PRODUCT_FILES = 5;
 const MAX_PRODUCT_FILE_MB = 25;
@@ -78,7 +83,7 @@ function addProductFiles(event: Event) {
     for (const file of chosen) {
         const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
         if (!PRODUCT_FILE_EXTENSIONS.includes(ext)) {
-            productFileError.value = `${file.name}: please choose a PDF, Excel, CSV, JPG or PNG file.`;
+            productFileError.value = `${file.name}: this file type is not supported. Please choose a PDF, Word, Excel, PowerPoint, text, CSV or picture file.`;
             continue;
         }
         if (file.size === 0) {
@@ -103,6 +108,7 @@ function addProductFiles(event: Event) {
         form.productFiles.push(file);
         queueCheck(addUpload(file));
     }
+    recheckBrandRows();
 }
 
 function removeProductFile(index: number) {
@@ -114,6 +120,7 @@ function removeProductFile(index: number) {
         form.productFiles.splice(index, 1);
     }
     productFileError.value = null;
+    recheckBrandRows();
 }
 
 // ------------------------------------------------------------------ reading the product lists
@@ -166,6 +173,7 @@ function removeUpload(upload: Upload) {
     upload.controller?.abort();
     uploads.value = uploads.value.filter((u) => u !== upload);
     form.productFiles = form.productFiles.filter((f) => f !== upload.file);
+    recheckBrandRows();
 }
 
 // Files are checked one after another, so a big scan does not slow the others down.
@@ -233,6 +241,7 @@ async function checkProductList(upload: Upload) {
 
     upload.hash = hash;
     upload.state = 'uploaded';
+    recheckBrandRows();
 }
 
 
@@ -284,6 +293,63 @@ const fields = [
     },
 ] as const;
 
+// ------------------------------------------------------------------ contact details: checked while typing and before sending
+
+type ContactKey = 'company' | 'contactName' | 'email' | 'phone';
+
+function contactError(key: ContactKey): string | null {
+    switch (key) {
+        case 'company':
+            return requiredTextError(form.company, 'Enter your company name.');
+        case 'contactName':
+            return requiredTextError(form.contactName, 'Enter the contact name.');
+        case 'email':
+            return emailError(form.email);
+        case 'phone':
+            return phoneError(props.phoneRules, form.phoneCountry, form.phone);
+    }
+}
+
+// Shows or clears the message under one field.
+function validateContact(key: ContactKey): boolean {
+    const message = contactError(key);
+    if (message) {
+        form.setError(key, message);
+    } else {
+        form.clearErrors(key);
+    }
+    return message === null;
+}
+
+// While typing: an error that is showing goes away as soon as the value is right; a new one is shown when the
+// field is left (blur) or the form is sent.
+function onContactInput(key: ContactKey) {
+    if (form.errors[key] && contactError(key) === null) {
+        form.clearErrors(key);
+    }
+}
+
+const phoneCountryInfo = computed(() => props.phoneRules.countries.find((c) => c.code === form.phoneCountry));
+
+// The number accepts digits only: other characters are never entered, whether typed or pasted.
+function onPhoneInput() {
+    const digits = digitsOnly(form.phone);
+    if (digits !== form.phone) {
+        form.phone = digits;
+    }
+    onContactInput('phone');
+}
+
+const CONTROL_KEYS = ['Backspace', 'Delete', 'Tab', 'Enter', 'ArrowLeft', 'ArrowRight', 'Home', 'End'];
+function digitsKeydown(event: KeyboardEvent) {
+    if (event.ctrlKey || event.metaKey || event.altKey || CONTROL_KEYS.includes(event.key)) {
+        return;
+    }
+    if (!/^\d$/.test(event.key)) {
+        event.preventDefault();
+    }
+}
+
 // "Others": a brand that is not in the list; the client describes the product in their own words.
 const OTHERS = 'Others';
 
@@ -301,59 +367,114 @@ const canAddBrandRow = computed(
         form.brandItems.length < 50,
 );
 
-// Checked before sending: a description or quantity needs a brand (or Others); Others needs a
-// brand name and a description; a quantity, when given, must be a number greater than zero.
+// Checked while typing and before sending. A product row needs a brand (or Others), a description and a whole-number
+// quantity. The one exception is an uploaded product list: it names the products, so brand becomes optional, and a
+// row left empty is simply ignored. Others also needs the brand name.
 const brandsError = ref<string | null>(null);
-type BrandField = 'brandName' | 'details' | 'quantity';
+type BrandField = 'brand' | 'brandName' | 'details' | 'quantity';
 const brandRowErrors = ref<Record<number, Partial<Record<BrandField, string>>>>({});
+
+const hasProductList = computed(() => form.productFiles.length > 0);
+const rowIsBlank = (item: BrandItem) => !item.brand && !item.brandName.trim() && !item.details.trim() && !item.quantity.trim();
+
+function rowErrors(item: BrandItem): Partial<Record<BrandField, string>> {
+    const row: Partial<Record<BrandField, string>> = {};
+    if (rowIsBlank(item)) {
+        return row;
+    }
+    // With a product list a row that only names a brand is a preference and needs nothing more.
+    const preferenceOnly = hasProductList.value && item.brand !== '' && !item.details.trim() && !item.quantity.trim() && item.brand !== OTHERS;
+    if (!item.brand && !hasProductList.value) {
+        row.brand = 'Select a brand, or choose Others if it is not listed.';
+    }
+    if (item.brand === OTHERS && item.brandName.trim() === '') {
+        row.brandName = 'Please enter the brand name.';
+    }
+    if (!preferenceOnly) {
+        if (item.details.trim() === '') {
+            row.details = 'Describe the product you need.';
+        }
+        const quantity = wholeQuantityError(item.quantity);
+        if (quantity) {
+            row.quantity = quantity;
+        }
+    }
+    return row;
+}
 
 function checkBrandRows(): boolean {
     brandsError.value = null;
     const errors: Record<number, Partial<Record<BrandField, string>>> = {};
     form.brandItems.forEach((item, index) => {
-        const row: Partial<Record<BrandField, string>> = {};
-        if (item.brand === OTHERS && item.brandName.trim() === '') {
-            row.brandName = 'Please enter the brand name.';
-        }
-        if (item.brand === OTHERS && item.details.trim() === '') {
-            row.details = 'Please describe the product you need.';
-        }
-        if (item.quantity.trim() !== '') {
-            const quantity = parseQuantity(item.quantity);
-            if (quantity.error) {
-                row.quantity = quantity.error;
-            }
-        }
+        const row = rowErrors(item);
         if (Object.keys(row).length) {
             errors[index] = row;
         }
     });
     brandRowErrors.value = errors;
 
-    if (form.brandItems.some((item) => !item.brand && (item.details.trim() !== '' || item.quantity.trim() !== ''))) {
-        brandsError.value = 'Choose a brand for each product description, or choose Others if the brand is not listed.';
-    } else if (Object.keys(errors).length) {
-        brandsError.value = 'Please check the highlighted brand fields.';
+    if (Object.keys(errors).length) {
+        brandsError.value = 'Please check the highlighted product fields.';
+    } else if (!hasProductList.value && form.brandItems.every(rowIsBlank)) {
+        brandsError.value = 'Add at least one product (brand, description and quantity), or upload a product list.';
     }
     return brandsError.value === null;
+}
+
+// Re-checks once something was already flagged (for example after a product list is uploaded or removed, which
+// changes whether a brand is required), so obsolete errors disappear.
+function recheckBrandRows() {
+    if (brandsError.value || Object.keys(brandRowErrors.value).length) {
+        checkBrandRows();
+    }
 }
 
 // "Others – Brand Not Listed" adds the Brand Name field: the cursor moves there. The description
 // and quantity already typed are kept when switching between brands.
 async function onBrandChange(index: number) {
     brandsError.value = null;
-    delete brandRowErrors.value[index];
+    delete brandRowErrors.value[index]?.brand;
+    delete brandRowErrors.value[index]?.brandName;
     if (form.brandItems[index]?.brand === OTHERS) {
         await nextTick();
         document.getElementById(`brand-name-${index}`)?.focus();
     }
 }
 
+// While typing: a showing error goes away as soon as the value is right.
 function clearBrandError(index: number, field: BrandField) {
-    brandsError.value = null;
-    if (brandRowErrors.value[index]) {
-        delete brandRowErrors.value[index][field];
+    const item = form.brandItems[index];
+    if (!item || !brandRowErrors.value[index]?.[field]) {
+        return;
     }
+    if (!rowErrors(item)[field]) {
+        delete brandRowErrors.value[index][field];
+        if (!Object.keys(brandRowErrors.value[index]).length) {
+            delete brandRowErrors.value[index];
+        }
+        if (!Object.keys(brandRowErrors.value).length) {
+            brandsError.value = null;
+        }
+    }
+}
+
+// Shown when the field is left.
+function checkBrandField(index: number, field: BrandField) {
+    const item = form.brandItems[index];
+    const message = item ? rowErrors(item)[field] : undefined;
+    if (message) {
+        brandRowErrors.value[index] = { ...(brandRowErrors.value[index] ?? {}), [field]: message };
+    }
+}
+
+// The quantity accepts digits only, typed or pasted.
+function onQuantityInput(index: number) {
+    const item = form.brandItems[index];
+    const digits = digitsOnly(item.quantity);
+    if (digits !== item.quantity) {
+        item.quantity = digits;
+    }
+    clearBrandError(index, 'quantity');
 }
 
 // Floating labels stay small and raised while a field has a value (as on the contact fields).
@@ -375,12 +496,17 @@ function removeBrandRow(index: number) {
     }
 }
 
-function submit() {
+async function submit() {
     if (form.processing) {
         return;
     }
 
-    if (!checkBrandRows()) {
+    // Every contact field is checked (and its message shown) before anything is sent.
+    const contactOk = (['company', 'contactName', 'email', 'phone'] as ContactKey[]).map((key) => validateContact(key)).every(Boolean);
+    const rowsOk = checkBrandRows();
+    if (!contactOk || !rowsOk) {
+        await nextTick();
+        formElement.value?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
         return;
     }
 
@@ -396,8 +522,10 @@ function submit() {
     form
         .transform((data) => ({
             ...data,
+            // Only rows left completely blank are dropped. A row without a brand is kept: with a product list attached the
+            // server accepts it, and without one the server refuses it (the form already checked).
             brands: data.brandItems
-                .filter((item) => item.brand.trim() !== '')
+                .filter((item) => !rowIsBlank(item))
                 .map((item) => ({
                     brand: item.brand.trim(),
                     brand_name: item.brand === OTHERS ? item.brandName.trim() : '',
@@ -415,7 +543,12 @@ function submit() {
                 productFileError.value = null;
                 uploads.value = [];
                 await nextTick();
-                successMessage.value?.focus();
+                // The message is at the top of the card and the page keeps its scroll position, so bring it into view
+                // explicitly (after the layout has settled) rather than relying on focus alone.
+                requestAnimationFrame(() => {
+                    successMessage.value?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    successMessage.value?.focus({ preventScroll: true });
+                });
             },
             onError: async () => {
                 await nextTick();
@@ -518,11 +651,12 @@ function submit() {
                     ref="formElement"
                     class="mt-7 space-y-6"
                     :aria-busy="form.processing"
+                    novalidate
                     @submit.prevent="submit"
                 >
                     <!-- Client Details with Floating Labels -->
                     <div class="grid gap-4 sm:grid-cols-2">
-                        <div v-for="field in fields" :key="field.key">
+                        <div v-for="field in fields.filter((f) => f.key !== 'phone')" :key="field.key">
                             <div class="relative">
                                 <input
                                     :id="field.key"
@@ -533,6 +667,8 @@ function submit() {
                                     :maxlength="field.maxlength"
                                     placeholder=" "
                                     required
+                                    @input="onContactInput(field.key)"
+                                    @blur="validateContact(field.key)"
                                     class="peer block w-full rounded-xl border border-gray-200 bg-gray-50/50 px-3.5 pt-5 pb-2 text-xs text-gray-900 focus:border-[#4b5320] focus:bg-white focus:ring-1 focus:ring-[#4b5320] focus:outline-none sm:text-sm"
                                     :class="
                                         form.errors[field.key]
@@ -564,6 +700,54 @@ function submit() {
                                 class="mt-1.5 text-xs text-red-600"
                             >
                                 {{ form.errors[field.key] }}
+                            </p>
+                        </div>
+
+                        <!-- Contact number: the country code is chosen from the list, the number is digits only -->
+                        <div>
+                            <div class="flex gap-2">
+                                <select
+                                    id="phoneCountry"
+                                    v-model="form.phoneCountry"
+                                    name="phoneCountry"
+                                    aria-label="Country code"
+                                    class="field-control w-[6.5rem] shrink-0 px-2.5 text-xs sm:text-sm"
+                                    :class="form.errors.phoneCountry ? 'border-red-500' : ''"
+                                    :title="phoneCountryInfo?.name"
+                                    @change="validateContact('phone')"
+                                >
+                                    <option v-for="c in phoneRules.countries" :key="c.code" :value="c.code" :title="c.name">{{ c.iso }} {{ c.code }}</option>
+                                </select>
+                                <div class="relative min-w-0 flex-1">
+                                    <input
+                                        id="phone"
+                                        v-model="form.phone"
+                                        name="phone"
+                                        type="tel"
+                                        inputmode="numeric"
+                                        autocomplete="tel-national"
+                                        :maxlength="phoneCountryInfo?.max ?? 12"
+                                        placeholder=" "
+                                        required
+                                        class="peer block w-full rounded-xl border border-gray-200 bg-gray-50/50 px-3.5 pt-5 pb-2 text-xs text-gray-900 focus:border-[#4b5320] focus:bg-white focus:ring-1 focus:ring-[#4b5320] focus:outline-none sm:text-sm"
+                                        :class="form.errors.phone ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''"
+                                        :aria-invalid="!!form.errors.phone"
+                                        :aria-describedby="form.errors.phone ? 'phone-error' : undefined"
+                                        @keydown="digitsKeydown"
+                                        @input="onPhoneInput"
+                                        @blur="validateContact('phone')"
+                                    />
+                                    <label
+                                        for="phone"
+                                        class="pointer-events-none absolute top-3.5 left-3.5 origin-[0] -translate-y-2.5 scale-75 transform text-xs font-semibold text-gray-500 duration-200 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-2.5 peer-focus:scale-75 peer-focus:text-[#4b5320]"
+                                        :class="form.phone ? '-translate-y-2.5 scale-75 text-[#4b5320]' : ''"
+                                    >
+                                        Phone number
+                                    </label>
+                                </div>
+                            </div>
+                            <p v-if="form.errors.phone || form.errors.phoneCountry" id="phone-error" class="mt-1.5 text-xs text-red-600">
+                                {{ form.errors.phone || form.errors.phoneCountry }}
                             </p>
                         </div>
                     </div>
@@ -678,6 +862,9 @@ function submit() {
                                             v-model="item.brand"
                                             :aria-label="`Brand ${index + 1}`"
                                             class="field-control w-full px-3 py-2 text-sm"
+                                            :class="brandRowErrors[index]?.brand ? 'border-red-500' : ''"
+                                            :aria-invalid="!!brandRowErrors[index]?.brand"
+                                            :aria-describedby="brandRowErrors[index]?.brand ? `brand-select-${index}-error` : undefined"
                                             @change="onBrandChange(index)"
                                         >
                                             <option value="">
@@ -696,6 +883,9 @@ function submit() {
                                                 Others – Brand Not Listed
                                             </option>
                                         </select>
+                                        <p v-if="brandRowErrors[index]?.brand" :id="`brand-select-${index}-error`" class="mt-1.5 text-xs text-red-600">
+                                            {{ brandRowErrors[index]?.brand }}
+                                        </p>
                                     </div>
 
                                     <!-- Floating-label fields: Brand Name (Others only), Description and Quantity.
@@ -715,6 +905,7 @@ function submit() {
                                                     :aria-invalid="!!brandRowErrors[index]?.brandName"
                                                     :aria-describedby="brandRowErrors[index]?.brandName ? `brand-name-${index}-error` : undefined"
                                                     @input="clearBrandError(index, 'brandName')"
+                                                    @blur="checkBrandField(index, 'brandName')"
                                                 />
                                                 <label
                                                     :for="`brand-name-${index}`"
@@ -737,19 +928,20 @@ function submit() {
                                                     rows="2"
                                                     maxlength="1000"
                                                     placeholder=" "
-                                                    :required="item.brand === OTHERS"
+                                                    :required="!hasProductList"
                                                     class="peer block w-full resize-y rounded-xl border bg-gray-50/50 px-3.5 pt-5 pb-2 text-xs text-gray-900 focus:bg-white focus:ring-1 focus:outline-none sm:text-sm"
                                                     :class="brandRowErrors[index]?.details ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : 'border-gray-200 focus:border-[#4b5320] focus:ring-[#4b5320]'"
                                                     :aria-invalid="!!brandRowErrors[index]?.details"
                                                     :aria-describedby="brandRowErrors[index]?.details ? `brand-details-${index}-error` : undefined"
                                                     @input="clearBrandError(index, 'details')"
+                                                    @blur="checkBrandField(index, 'details')"
                                                 ></textarea>
                                                 <label
                                                     :for="`brand-details-${index}`"
                                                     class="pointer-events-none absolute top-3.5 left-3.5 origin-[0] -translate-y-2.5 scale-75 transform text-xs font-semibold text-gray-500 duration-200 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-2.5 peer-focus:scale-75 peer-focus:text-[#4b5320]"
                                                     :class="floatingLabelClass(!!item.details)"
                                                 >
-                                                    Description<span v-if="item.brand === OTHERS" class="text-red-600"> *</span>
+                                                    Description<span v-if="!hasProductList || item.brand === OTHERS" class="text-red-600"> *</span>
                                                 </label>
                                             </div>
                                             <p v-if="brandRowErrors[index]?.details" :id="`brand-details-${index}-error`" class="mt-1.5 text-xs text-red-600">
@@ -763,21 +955,23 @@ function submit() {
                                                     :id="`brand-quantity-${index}`"
                                                     v-model="item.quantity"
                                                     type="text"
-                                                    inputmode="decimal"
-                                                    maxlength="15"
+                                                    inputmode="numeric"
+                                                    maxlength="7"
                                                     placeholder=" "
                                                     class="peer block w-full rounded-xl border bg-gray-50/50 px-3.5 pt-5 pb-2 text-xs text-gray-900 focus:bg-white focus:ring-1 focus:outline-none sm:text-sm"
                                                     :class="brandRowErrors[index]?.quantity ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : 'border-gray-200 focus:border-[#4b5320] focus:ring-[#4b5320]'"
                                                     :aria-invalid="!!brandRowErrors[index]?.quantity"
                                                     :aria-describedby="brandRowErrors[index]?.quantity ? `brand-quantity-${index}-error` : undefined"
-                                                    @input="clearBrandError(index, 'quantity')"
+                                                    @keydown="digitsKeydown"
+                                                    @input="onQuantityInput(index)"
+                                                    @blur="checkBrandField(index, 'quantity')"
                                                 />
                                                 <label
                                                     :for="`brand-quantity-${index}`"
                                                     class="pointer-events-none absolute top-3.5 left-3.5 origin-[0] -translate-y-2.5 scale-75 transform text-xs font-semibold text-gray-500 duration-200 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-2.5 peer-focus:scale-75 peer-focus:text-[#4b5320]"
                                                     :class="floatingLabelClass(!!item.quantity)"
                                                 >
-                                                    Quantity
+                                                    Quantity<span v-if="!hasProductList" class="text-red-600"> *</span>
                                                 </label>
                                             </div>
                                             <p v-if="brandRowErrors[index]?.quantity" :id="`brand-quantity-${index}-error`" class="mt-1.5 text-xs text-red-600">
@@ -853,7 +1047,7 @@ function submit() {
                                         </p>
                                     </li>
                                 </ul>
-                                <p class="mt-1 text-[11px] text-gray-400">PDF, Excel, CSV, JPG or PNG (handwritten or printed product lists) · Up to {{ MAX_PRODUCT_FILES }} files, {{ MAX_PRODUCT_FILE_MB }} MB each</p>
+                                <p class="mt-1 text-[11px] text-gray-400">PDF, Word, Excel, PowerPoint, text, CSV or pictures such as JPG, PNG, TIFF, WEBP, HEIC (handwritten or printed product lists) · Up to {{ MAX_PRODUCT_FILES }} files, {{ MAX_PRODUCT_FILE_MB }} MB each</p>
                                 <p v-if="productFileError || productFileServerError" class="mt-1 text-xs font-medium text-red-600" role="alert">
                                     {{ productFileError || productFileServerError }}
                                 </p>

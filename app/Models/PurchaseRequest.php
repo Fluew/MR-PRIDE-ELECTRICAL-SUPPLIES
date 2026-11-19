@@ -7,6 +7,7 @@ use App\Traits\TracksDeletions;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class PurchaseRequest extends Model
@@ -80,6 +81,12 @@ class PurchaseRequest extends Model
     public function quotation(): BelongsTo
     {
         return $this->belongsTo(Quotation::class);
+    }
+
+    /** Bidding events raised for this request (a cancelled one can be replaced by a new one). */
+    public function biddingEvents(): HasMany
+    {
+        return $this->hasMany(BiddingEvent::class);
     }
 
     public function purchaseOrder(): HasOne

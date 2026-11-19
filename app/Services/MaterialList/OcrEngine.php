@@ -82,6 +82,42 @@ class OcrEngine
         return $this->ocrPdf($pdfPath, $pages, fn (string $image) => $this->imageToTsv($image));
     }
 
+    /** Word positions in one page's text layer (1-based page). Null when unavailable or failed. */
+    public function pdfTextTsvPage(string $pdfPath, int $page): ?string
+    {
+        if (! $this->pdfTextAvailable()) {
+            return null;
+        }
+
+        try {
+            $result = Process::timeout((int) config('services.ocr.timeout', 60))->run([
+                $this->pdftotextBinary(), '-tsv', '-enc', 'UTF-8', '-f', (string) $page, '-l', (string) $page, $pdfPath, '-',
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('pdftotext failed: '.$e->getMessage());
+
+            return null;
+        }
+
+        return $result->successful() ? $result->output() : null;
+    }
+
+    /**
+     * Render only the given pages (1-based) and OCR them with the same settings as a scanned document.
+     *
+     * @param  list<int>  $pages
+     * @return array<int, string> Tesseract TSV by page number
+     */
+    public function pdfPagesToTsv(string $pdfPath, array $pages): array
+    {
+        $out = [];
+        foreach ($pages as $page) {
+            $out[$page] = $this->ocrPdfRange($pdfPath, $page, fn (string $image) => $this->imageToTsv($image))[0] ?? '';
+        }
+
+        return $out;
+    }
+
     /** Word positions in a PDF's text layer (pdftotext -tsv, all pages). Null when unavailable or failed. */
     public function pdfTextTsv(string $pdfPath): ?string
     {
@@ -244,6 +280,37 @@ class OcrEngine
         }
 
         return false;
+    }
+
+    /** One page of a PDF, rendered (300 dpi, grayscale) and read: the same rendering and OCR as ocrPdf(). @return array<int, string> */
+    private function ocrPdfRange(string $pdfPath, int $page, callable $ocrImage): array
+    {
+        if (! $this->pdfRendererAvailable() || ! $this->tesseractAvailable()) {
+            throw new ExtractionException('This PDF has scanned pages, and text recognition is not available on the server right now.', 'ocr_unavailable');
+        }
+        $dir = storage_path('app/private/tmp/ocr-'.bin2hex(random_bytes(8)));
+        File::ensureDirectoryExists($dir);
+
+        try {
+            $render = Process::timeout((int) config('services.ocr.timeout', 60) * 2)->run([
+                config('services.ocr.pdftoppm', 'pdftoppm'), '-r', '300', '-gray', '-png', '-f', (string) $page, '-l', (string) $page, $pdfPath, $dir.'/page',
+            ]);
+            if (! $render->successful()) {
+                Log::warning('pdftoppm failed: '.mb_substr($render->errorOutput(), 0, 300));
+                throw new ExtractionException("We could not read page {$page} of this PDF. Please upload a clearer copy.", 'pdf_render_failed');
+            }
+            $images = glob($dir.'/page*.png') ?: [];
+            natsort($images);
+
+            return array_map($ocrImage, array_values($images));
+        } catch (ExtractionException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            Log::warning('Scanned PDF page OCR failed: '.$e->getMessage());
+            throw new ExtractionException("Reading page {$page} of this PDF took too long or failed. Please try a smaller file.", 'ocr_failed');
+        } finally {
+            File::deleteDirectory($dir);
+        }
     }
 
     /** @return array<int, string> */

@@ -14,6 +14,7 @@ use App\Models\Team;
 use App\Models\User;
 use App\Services\Documents\DocumentImage;
 use App\Services\Documents\DocumentPdf;
+use App\Services\Import\ValueParser;
 use App\Services\MaterialList\ExtractionException;
 use App\Services\MaterialList\FileReader;
 use App\Services\MaterialList\HeaderMapper;
@@ -242,6 +243,11 @@ class QuotationController extends Controller
             $actions[] = 'status:'.self::SUBMIT_FOR_APPROVAL;
         }
         foreach (QuotationStatus::manual() as $manual) {
+            // A sent quotation's rejection is the customer's answer ("decision"); the workflow
+            // refuses a manual Rejected for it, so the button would always fail.
+            if ($status === QuotationStatus::Sent && $manual === QuotationStatus::Rejected) {
+                continue;
+            }
             if ($status->canMoveTo($manual)) {
                 $actions[] = 'status:'.$manual->value;
             }
@@ -1339,9 +1345,13 @@ class QuotationController extends Controller
             }
 
             // 2. QUANTITY
-            $rawQty = isset($row[$qtyIdx]) ? preg_replace('/[^0-9]/', '', (string) $row[$qtyIdx]) : '0';
-            $qty = is_numeric($rawQty) ? (int) $rawQty : 0;
-            if ($qty <= 0) {
+            // Read as written: a minus sign or a decimal point is never stripped to make a number.
+            $rawQty = isset($row[$qtyIdx]) ? trim((string) $row[$qtyIdx]) : '';
+            $wholeQty = ValueParser::wholeQuantity($rawQty);
+            $qty = $wholeQty ?? 0;
+            if ($rawQty !== '' && $wholeQty === null) {
+                $errors[] = "Quantity \"{$rawQty}\" is not a whole number.";
+            } elseif ($qty <= 0) {
                 $errors[] = 'Quantity must be at least 1.';
             }
 

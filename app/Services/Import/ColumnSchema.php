@@ -25,6 +25,7 @@ class ColumnSchema
             ],
             'category' => ['category', 'cat', 'group', 'product category', 'type', 'class', 'product type'],
             'brand' => ['brand', 'brand name', 'manufacturer', 'make', 'mfr', 'maker'],
+            'supplier' => ['supplier', 'supplier name', 'supplier company', 'vendor', 'vendor name', 'distributor', 'supplied by'],
             'unit' => ['unit', 'uom', 'unit of measure', 'unit of measurement', 'um', 'measure', 'units'],
             'cost_price' => ['cost price', 'cost', 'unit cost', 'purchase price', 'buying price', 'acquisition cost', 'cost per unit'],
             'price' => ['selling price', 'price', 'srp', 'retail price', 'unit price', 'sale price', 'sales price', 'price per unit'],
@@ -80,7 +81,7 @@ class ColumnSchema
     /** Field names as staff read them (also used by the column-mapping screen). */
     public const LABELS = [
         ImportBatch::INVENTORY => [
-            'sku' => 'SKU', 'name' => 'Product name', 'category' => 'Category', 'brand' => 'Brand', 'unit' => 'Unit',
+            'sku' => 'SKU', 'name' => 'Product name', 'category' => 'Category', 'brand' => 'Brand', 'supplier' => 'Supplier', 'unit' => 'Unit',
             'cost_price' => 'Cost price', 'price' => 'Selling price', 'stock' => 'Stock (shown only)',
         ],
         ImportBatch::SUPPLIER_QUOTATION => [

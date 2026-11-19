@@ -120,7 +120,7 @@ const sample = [
                     Do not upload product photographs without a written product
                     list.
                 </li>
-                <li>Accepted formats: PDF, PNG, JPG, JPEG, XLS, XLSX, CSV.</li>
+                <li>Accepted formats: PDF; Word (DOC, DOCX); Excel (XLS, XLSX, ODS, CSV); PowerPoint (PPT, PPTX); OpenDocument (ODT, ODP); text (TXT, RTF, HTML); pictures (JPG, PNG, TIFF, BMP, WEBP, GIF, HEIC, PBM, PGM, PPM, SVG).</li>
                 <li>Maximum {{ maxFiles }} files, {{ maxFileMb }} MB each.</li>
             </ul>
 

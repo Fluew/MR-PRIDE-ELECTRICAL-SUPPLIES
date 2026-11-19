@@ -56,7 +56,8 @@ test('can update an inventory product without type error', function () {
         'name' => 'Updated Circuit Breaker 63A 3P',
         'price' => 850.00,
         'cost_price' => 550.00,
-        'reorder_level' => 15,
+        'reorder_level' => 10,
+        'reorder_quantity' => 20,
     ]);
 });
 

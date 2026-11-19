@@ -59,6 +59,8 @@ class ExchangeRates
                 ->timeout((int) config('currency.timeout', 5))
                 // A CA bundle for PHP installs without one (otherwise HTTPS fails with cURL error 60).
                 ->when(config('currency.ca_bundle'), fn ($http, $bundle) => $http->withOptions(['verify' => $bundle]))
+                // Networks with a slow or broken IPv6 route take longer than the connect timeout before falling back.
+                ->when(config('currency.ip_resolve'), fn ($http, $version) => $http->withOptions(['force_ip_resolve' => $version]))
                 ->get((string) config('currency.usd_php_rate_url'));
             $rate = $this->parse($response);
         } catch (Throwable $e) {

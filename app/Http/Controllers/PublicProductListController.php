@@ -30,7 +30,7 @@ class PublicProductListController extends Controller
         $max = FileReader::MAX_COLS - 1;
         // This app turns validation errors into redirects outside /api, so this JSON endpoint validates itself.
         $validator = Validator::make($request->all(), [
-            'file' => ['required', 'file', 'max:'.(FileReader::MAX_BYTES / 1024), 'extensions:'.implode(',', FileReader::EXTENSIONS)],
+            'file' => ['required', 'file', 'max:'.(FileReader::MAX_BYTES / 1024), 'extensions:'.implode(',', FileReader::QUOTATION_EXTENSIONS)],
             'mapping' => ['nullable', 'array'],
             'mapping.description' => ['required_with:mapping', 'integer', 'min:0', "max:{$max}"],
             'mapping.quantity' => ['required_with:mapping', 'integer', 'min:0', "max:{$max}"],
@@ -42,7 +42,7 @@ class PublicProductListController extends Controller
             'file.file' => 'The file could not be uploaded. Please try again.',
             'file.uploaded' => self::TOO_LARGE,
             'file.max' => self::TOO_LARGE,
-            'file.extensions' => 'This file type is not supported. Please upload a PDF, PNG, JPG, JPEG, XLS, XLSX or CSV file.',
+            'file.extensions' => 'This file type is not supported. Please upload a PDF, Word, Excel, PowerPoint, OpenDocument, text, CSV or picture file (JPG, PNG, TIFF, BMP, WEBP, GIF, HEIC).',
             'mapping.description.required_with' => 'Please choose the column that holds the description.',
             'mapping.quantity.required_with' => 'Please choose the column that holds the quantity.',
             'mapping.*.integer' => 'Please choose the columns from the list.',
@@ -144,6 +144,7 @@ class PublicProductListController extends Controller
     public static function clientMessage(ExtractionException $e): array
     {
         return match ($e->reason) {
+            'converter_unavailable' => [$e->getMessage(), $e->reason, false],
             'ocr_unavailable' => ["We can't read scanned documents or pictures automatically right now. You can still send this file with your request and our team will read it.", $e->reason, true],
             'ocr_failed', 'pdf_render_failed' => ['Reading this file took too long or failed. Please try a clearer or smaller file. You can also send it as it is and our team will read it.', $e->reason, true],
             'busy' => [$e->getMessage(), $e->reason, true],

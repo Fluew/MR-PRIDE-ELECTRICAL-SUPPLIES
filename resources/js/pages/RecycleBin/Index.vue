@@ -405,6 +405,8 @@ const getTypeBadgeClasses = (type: string) => {
             return 'bg-cyan-50 text-cyan-800 border-cyan-200 dark:bg-cyan-950/40 dark:text-cyan-300 dark:border-cyan-800/60';
         case 'purchase_request':
             return 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800/60';
+        case 'bidding_event':
+            return 'bg-lime-50 text-lime-800 border-lime-200 dark:bg-lime-950/40 dark:text-lime-300 dark:border-lime-800/60';
         case 'commercial_invoice':
             return 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-800/60';
         case 'delivery':
@@ -462,7 +464,7 @@ const getTypeBadgeClasses = (type: string) => {
         </div>
 
         <!-- Search Bar & Record Type Filter -->
-        <div class="space-y-3 rounded-xl border border-gray-200 bg-white p-4">
+        <div class="space-y-3 panel p-4">
             <div class="flex flex-col md:flex-row gap-3 justify-between items-stretch md:items-center">
                 <div class="flex flex-col sm:flex-row gap-3 flex-1 min-w-0">
                 <!-- Search Box -->
@@ -751,7 +753,7 @@ const getTypeBadgeClasses = (type: string) => {
         v-if="showDetailsModal && activeRecord"
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 overflow-y-auto"
     >
-        <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl w-full max-w-2xl shadow-xl overflow-hidden animate-in fade-in duration-150 my-8">
+        <div class="panel dark:bg-gray-800 dark:border-gray-700 w-full max-w-2xl shadow-xl overflow-hidden animate-in fade-in duration-150 my-8">
             <!-- Modal Header -->
             <div class="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-start">
                 <div class="flex items-start gap-3">
@@ -865,7 +867,7 @@ const getTypeBadgeClasses = (type: string) => {
         v-if="showRestoreModal && recordToRestore"
         class="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"
     >
-        <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6 rounded-xl w-full max-w-md shadow-xl animate-in fade-in duration-150">
+        <div class="panel dark:bg-gray-800 dark:border-gray-700 p-6 w-full max-w-md shadow-xl animate-in fade-in duration-150">
             <div class="w-12 h-12 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center mb-4 border border-emerald-100 dark:border-emerald-800">
                 <RotateCcw class="w-6 h-6" />
             </div>
@@ -966,7 +968,7 @@ const getTypeBadgeClasses = (type: string) => {
         v-if="showBulkRestoreModal"
         class="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"
     >
-        <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6 rounded-xl w-full max-w-md shadow-xl animate-in fade-in duration-150">
+        <div class="panel dark:bg-gray-800 dark:border-gray-700 p-6 w-full max-w-md shadow-xl animate-in fade-in duration-150">
             <div class="w-12 h-12 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center mb-4 border border-emerald-100 dark:border-emerald-800">
                 <RotateCcw class="w-6 h-6" />
             </div>

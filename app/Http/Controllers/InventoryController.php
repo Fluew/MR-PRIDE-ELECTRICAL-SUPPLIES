@@ -9,6 +9,7 @@ use App\Models\Team;
 use App\Services\AuditLogger;
 use App\Services\Inventory\InventoryExporter;
 use App\Services\Inventory\SkuGenerator;
+use App\Services\Procurement\SupplierCosts;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -102,6 +103,18 @@ class InventoryController extends Controller
             ->paginate(10)
             ->withQueryString();
 
+        // Supplier unit price per listed product: the latest price from its usual supplier; when
+        // that supplier has none, the lowest price recorded from any other supplier.
+        $pageProducts = $products->getCollection();
+        $costs = $pageProducts->isEmpty() ? collect() : app(SupplierCosts::class)->latest($team->id, $pageProducts->pluck('id')->all());
+        $supplierNames = Supplier::where('team_id', $team->id)->whereIn('id', $costs->pluck('supplier_id')->unique()->all())->pluck('name', 'id');
+        $pageProducts->each(function (Product $p) use ($costs, $supplierNames) {
+            $cost = $p->supplier_id ? $costs->get($p->id.':'.$p->supplier_id) : null;
+            $cost ??= $costs->where('product_id', $p->id)->sortBy('unit_cost')->first();
+            $p->setAttribute('supplier_unit_price', $cost['unit_cost'] ?? null);
+            $p->setAttribute('supplier_price_from', $cost ? ($supplierNames[$cost['supplier_id']] ?? null) : null);
+        });
+
         // Calculate inventory summary counts in a single aggregate query (same products as the list)
         $counts = Product::where('team_id', $team->id)
             ->where(fn ($w) => $w->where('is_active', true)->orWhereNotNull('missing_fields'))
@@ -121,6 +134,7 @@ class InventoryController extends Controller
         $requiringReorderCount = (int) ($counts->requiring_reorder ?? 0);
 
         // Categories list (cached for 5 minutes per team)
+        // The categories products actually use (cached for 5 minutes per team; cleared when a new category appears).
         $categories = Cache::remember("team:{$team->id}:categories", 300, function () use ($team) {
             $cats = Product::where('team_id', $team->id)
                 ->distinct()
@@ -129,7 +143,9 @@ class InventoryController extends Controller
                 ->values()
                 ->toArray();
 
-            return empty($cats) ? ['Breakers', 'Wiring', 'Lighting', 'Controls', 'Tools', 'General'] : $cats;
+            sort($cats, SORT_NATURAL | SORT_FLAG_CASE);
+
+            return $cats;
         });
 
         // Suppliers list (cached for 5 minutes per team). Cached as plain arrays: the cache does
@@ -196,7 +212,9 @@ class InventoryController extends Controller
                 'requiring_reorder' => $requiringReorderCount,
                 'incomplete' => Product::where('team_id', $team->id)->where('is_active', false)->whereNotNull('missing_fields')->count(),
             ],
+            // The product forms keep the standard names to pick from; the filter lists only categories in use.
             'categories' => array_values(array_unique(array_merge(['Breakers', 'Wiring', 'Lighting', 'Controls', 'Tools', 'General'], $categories))),
+            'filter_categories' => array_values($categories),
             'suppliers' => $suppliers,
             'recent_movements' => $recentMovements,
             'filters' => [
@@ -330,8 +348,8 @@ class InventoryController extends Controller
             'supplier_id' => ['nullable', 'exists:suppliers,id'],
         ]);
 
-        $reorderLevel = (int) ($validated['reorder_level'] ?? 10);
-        $reorderQty = (int) ($validated['reorder_quantity'] ?? 50);
+        $reorderLevel = (int) $product->reorder_level;
+        $reorderQty = (int) $product->reorder_quantity;
 
         $product->update([
             'name' => trim($validated['name']),
@@ -553,7 +571,7 @@ class InventoryController extends Controller
                 'new_stock' => $newStock,
                 'reference_number' => $ref,
                 'reason' => $validated['reason'],
-                'remarks' => $validated['remarks'] ?: "Adjusted from {$prevStock} to {$newStock} ({$diff})",
+                'remarks' => ($validated['remarks'] ?? null) ?: "Adjusted from {$prevStock} to {$newStock} ({$diff})",
                 'movement_date' => now(),
             ]);
 

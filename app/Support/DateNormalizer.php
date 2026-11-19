@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use Carbon\Carbon;
+
 /**
  * Turns dates read from imported files (CSV, Excel, PDF text, OCR) into ISO 8601 YYYY-MM-DD,
  * the one date format the application stores and exchanges.
@@ -35,6 +37,23 @@ final class DateNormalizer
     public const AMBIGUOUS = 'ambiguous';
 
     public const INVALID = 'invalid';
+
+    /**
+     * A date typed into a page filter or address (from_date, to_date) as a Carbon date, or null
+     * when it is empty or cannot be read. For filters only: an unreadable value is treated as not
+     * given, so a mistyped address never becomes a server error.
+     */
+    public static function carbonOrNull(mixed $value): ?Carbon
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+        try {
+            return Carbon::parse(trim($value));
+        } catch (\Throwable) {
+            return null;
+        }
+    }
 
     private const MONTH_WORD = 'jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?';
 

@@ -237,6 +237,26 @@ class User extends Authenticatable
     }
 
     /**
+     * A delivery driver: Deliveries is assigned and neither Inventory nor Procurement is. Drivers
+     * see only the customer deliveries assigned to them, never inbound receiving. Staff who also
+     * have Inventory or Procurement keep what those modules give them on the Deliveries page
+     * (every customer delivery and inbound receiving): adding Deliveries never removes access.
+     */
+    public function isDeliveryDriverOnly(): bool
+    {
+        return ! $this->isAdmin()
+            && $this->hasModule('deliveries')
+            && ! $this->hasAnyModule(['inventory', 'procurement']);
+    }
+
+    /** May open the Deliveries module (same rule as its routes), so can be given a delivery to handle. */
+    public function canHandleDeliveries(): bool
+    {
+        return $this->isActive()
+            && ($this->isAdmin() || $this->hasAnyModule(['deliveries', 'inventory', 'procurement']));
+    }
+
+    /**
      * Replace this account's module assignments (unknown modules are ignored). The account role is
      * kept in step so every existing `role` check keeps working: staff_<first module> for staff,
      * and no module rows for admins / customers.

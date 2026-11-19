@@ -58,44 +58,44 @@ use SplMinHeap;
  */
 class DemoDataSeeder extends Seeder
 {
-    private const START = '2020-01-02 08:00';
+    protected const START = '2020-01-02 08:00';
 
-    private const LOCAL_TZ = 'Asia/Manila';
+    protected const LOCAL_TZ = 'Asia/Manila';
 
-    private Team $team;
+    protected Team $team;
 
-    private User $admin;
+    protected User $admin;
 
-    private CarbonImmutable $end;
+    protected CarbonImmutable $end;
 
-    private SplMinHeap $queue;
+    protected SplMinHeap $queue;
 
-    private int $seq = 0;
+    protected int $seq = 0;
 
     /** @var array<int, array{weight: int, min: int, max: int, primary: int, secondary: int}> */
-    private array $catalog = [];
+    protected array $catalog = [];
 
     /** @var list<array{client: Client, weight: int}> */
-    private array $clients = [];
+    protected array $clients = [];
 
     /** @var array<int, array{lead: int, late: float, reject: float, price: float, code: string}> */
-    private array $supplierProfile = [];
+    protected array $supplierProfile = [];
 
     /** @var array<int, int> units on order (requested, not yet received) per product */
-    private array $incoming = [];
+    protected array $incoming = [];
 
     /** @var array<int, bool> products with a purchase request waiting for approval */
-    private array $openRequest = [];
+    protected array $openRequest = [];
 
-    private int $reference = 0;
+    protected int $reference = 0;
 
-    private ?string $lastUrgentCheck = null;
-
-    /** @var array<string, int> */
-    private array $stats = [];
+    protected ?string $lastUrgentCheck = null;
 
     /** @var array<string, int> */
-    private array $failures = [];
+    protected array $stats = [];
+
+    /** @var array<string, int> */
+    protected array $failures = [];
 
     public function run(): void
     {
@@ -147,7 +147,7 @@ class DemoDataSeeder extends Seeder
 
     // ───────────────────────────── Setup ─────────────────────────────
 
-    private function prepareEnvironment(): void
+    protected function prepareEnvironment(): void
     {
         mt_srand(20200102);
         // Customer emails: in-memory mailer, jobs run at once (never queued for the live worker).
@@ -189,7 +189,7 @@ class DemoDataSeeder extends Seeder
     }
 
     /** @return array<string, list<Supplier>> suppliers by category */
-    private function createSuppliers(): array
+    protected function createSuppliers(): array
     {
         $rows = [
             // name, contact, city, categories, lead days, late chance, reject chance, price factor, code
@@ -227,7 +227,7 @@ class DemoDataSeeder extends Seeder
     }
 
     /** @param  array<string, list<Supplier>>  $suppliers */
-    private function createProducts(array $suppliers): void
+    protected function createProducts(array $suppliers): void
     {
         // name, category, brand, unit, price (USD), popularity weight, quantity per order line [min, max]
         $rows = [
@@ -337,7 +337,7 @@ class DemoDataSeeder extends Seeder
         $this->count('products', count($rows));
     }
 
-    private function createClients(): void
+    protected function createClients(): void
     {
         $rows = [
             ['Apex Builders Corp.', 'Ana Villareal', 'Quezon City', 9], ['Silverline Construction Inc.', 'Mark Dizon', 'Pasig City', 8],
@@ -372,7 +372,7 @@ class DemoDataSeeder extends Seeder
     }
 
     /** Verified supplier price quotes for the year (used for PO price prefill and supplier evaluation). */
-    private function recordSupplierQuotes(CarbonImmutable $on): void
+    protected function recordSupplierQuotes(CarbonImmutable $on): void
     {
         foreach ($this->catalog as $productId => $info) {
             $product = Product::find($productId);
@@ -400,7 +400,7 @@ class DemoDataSeeder extends Seeder
 
     // ───────────────────────────── Schedule ─────────────────────────────
 
-    private function schedule(CarbonImmutable $start): void
+    protected function schedule(CarbonImmutable $start): void
     {
         $endLocal = $this->end->setTimezone(self::LOCAL_TZ);
         for ($month = $start->startOfMonth(); $month->lte($endLocal); $month = $month->addMonth()) {
@@ -423,7 +423,7 @@ class DemoDataSeeder extends Seeder
         }
     }
 
-    private function planMonth(CarbonImmutable $month): void
+    protected function planMonth(CarbonImmutable $month): void
     {
         $count = max(1, (int) round($this->quotationsPerMonth($month) * (0.8 + mt_rand(0, 40) / 100)));
         for ($i = 0; $i < $count; $i++) {
@@ -436,13 +436,14 @@ class DemoDataSeeder extends Seeder
 
     // ───────────────────────────── Quotations → Sales Orders ─────────────────────────────
 
-    private function createQuotation(): void
+    protected function createQuotation(): void
     {
         $client = $this->pickClient();
-        $lineCount = $this->weighted([1 => 30, 2 => 35, 3 => 22, 4 => 13]);
+        $lineCount = $this->weighted($this->lineCountWeights());
+        $demand = $this->demandWeights($this->local());
         $picked = [];
         while (count($picked) < $lineCount) {
-            $picked[$this->weighted(array_map(fn ($c) => $c['weight'], $this->catalog))] = true;
+            $picked[$this->weighted($demand)] = true;
         }
 
         $items = [];
@@ -539,7 +540,7 @@ class DemoDataSeeder extends Seeder
         });
     }
 
-    private function planPayment(int $saleId): void
+    protected function planPayment(int $saleId): void
     {
         $sale = Sale::find($saleId);
         $now = $this->local();
@@ -582,7 +583,7 @@ class DemoDataSeeder extends Seeder
     }
 
     /** Record a payment, then verify it (verification confirms the order when its terms are met). */
-    private function payAndVerify(int $saleId, CarbonImmutable $when, float $amount, bool $startDelivery = false): void
+    protected function payAndVerify(int $saleId, CarbonImmutable $when, float $amount, bool $startDelivery = false): void
     {
         $this->at($when, function () use ($saleId, $amount, $startDelivery) {
             $sale = Sale::find($saleId);
@@ -606,7 +607,7 @@ class DemoDataSeeder extends Seeder
     }
 
     /** Pay what is still owed (or a share of it). */
-    private function payBalance(int $saleId, CarbonImmutable $when, float $share = 1.0): void
+    protected function payBalance(int $saleId, CarbonImmutable $when, float $share = 1.0): void
     {
         $this->at($when, function () use ($saleId, $share) {
             $sale = Sale::find($saleId);
@@ -621,7 +622,7 @@ class DemoDataSeeder extends Seeder
 
     // ───────────────────────────── Deliveries ─────────────────────────────
 
-    private function startDelivery(int $saleId, CarbonImmutable $when, bool $split = false, int $tries = 0): void
+    protected function startDelivery(int $saleId, CarbonImmutable $when, bool $split = false, int $tries = 0): void
     {
         $this->at($when, function () use ($saleId, $split) {
             $sale = Sale::find($saleId);
@@ -656,7 +657,7 @@ class DemoDataSeeder extends Seeder
         });
     }
 
-    private function dispatchRelease(int $releaseId): void
+    protected function dispatchRelease(int $releaseId): void
     {
         $release = DeliveryRelease::find($releaseId);
         app(FulfillmentService::class)->dispatch($release, $this->admin);
@@ -679,7 +680,7 @@ class DemoDataSeeder extends Seeder
         $this->at($arrive, fn () => $this->receive($releaseId));
     }
 
-    private function receive(int $releaseId, ?string $remarks = null): void
+    protected function receive(int $releaseId, ?string $remarks = null): void
     {
         $release = DeliveryRelease::find($releaseId);
         $sale = Sale::find($release->sale_id);
@@ -696,10 +697,11 @@ class DemoDataSeeder extends Seeder
     // ───────────────────────────── Procurement ─────────────────────────────
 
     /** Twice a month: request stock for products whose stock (plus what is on order) runs low. */
-    private function stockCheck(): void
+    protected function stockCheck(): void
     {
         $lines = [];
-        $totalWeight = array_sum(array_column($this->catalog, 'weight'));
+        $weights = $this->demandWeights($this->local(), true);
+        $totalWeight = array_sum($weights);
         // Units still owed to customers on confirmed orders (they are in stock until delivered).
         $committed = SaleItem::query()->join('sales', 'sales.id', '=', 'sale_items.sale_id')
             ->whereIn('sales.status', [SalesOrderStatus::Confirmed->value, SalesOrderStatus::Processing->value])->whereNull('sales.deleted_at')
@@ -707,11 +709,11 @@ class DemoDataSeeder extends Seeder
             ->selectRaw('sale_items.product_id, SUM(sale_items.quantity - sale_items.cancelled_quantity - sale_items.delivered_quantity) as owed')
             ->pluck('owed', 'product_id');
         foreach ($this->catalog as $productId => $info) {
-            if ($this->openRequest[$productId] ?? false) {
+            if (($this->openRequest[$productId] ?? false) || ! $this->restocks($productId)) {
                 continue;
             }
             $product = Product::find($productId);
-            $monthly = $this->monthlyDemand($info['weight'], $info['min'], $info['max'], $totalWeight, $this->local());
+            $monthly = $this->monthlyDemand($weights[$productId], $info['min'], $info['max'], $totalWeight, $this->local());
             $position = (int) $product->stock - (int) ($committed[$productId] ?? 0) + $this->incoming[$productId];
             // Enough for six weeks of demand and one large order.
             if ($position >= max((int) $product->reorder_level, $monthly * 1.5, $info['max'])) {
@@ -722,7 +724,7 @@ class DemoDataSeeder extends Seeder
             $lines[] = [
                 'product_id' => $productId,
                 'quantity' => $qty,
-                'supplier_id' => mt_rand(1, 100) <= 75 ? $info['primary'] : $info['secondary'],
+                'supplier_id' => mt_rand(1, 100) <= $this->primaryShare() ? $info['primary'] : $info['secondary'],
                 'justification' => 'Stock is below the reorder point; this covers about three months of forecast demand.',
             ];
         }
@@ -740,7 +742,7 @@ class DemoDataSeeder extends Seeder
         }
     }
 
-    private function reviewRequest(int $prId): void
+    protected function reviewRequest(int $prId): void
     {
         $pr = PurchaseRequest::find($prId);
         $this->openRequest[$pr->product_id] = false;
@@ -757,7 +759,7 @@ class DemoDataSeeder extends Seeder
         $this->at($this->businessTime($this->local()->addMinutes(mt_rand(30, 240))), fn () => $this->sendOrder($poId));
     }
 
-    private function sendOrder(int $poId): void
+    protected function sendOrder(int $poId): void
     {
         $po = PurchaseOrder::find($poId);
         $product = Product::find($po->product_id);
@@ -785,7 +787,7 @@ class DemoDataSeeder extends Seeder
     }
 
     /** Goods arrive against the purchase order: delivery, then inspection (stock in). */
-    private function receiveGoods(int $poId, ?int $quantity = null): void
+    protected function receiveGoods(int $poId, ?int $quantity = null): void
     {
         $po = PurchaseOrder::find($poId);
         $workflow = app(ProcurementWorkflow::class);
@@ -840,7 +842,7 @@ class DemoDataSeeder extends Seeder
 
     // ───────────────────────────── Yearly price changes ─────────────────────────────
 
-    private function raisePrices(): void
+    protected function raisePrices(): void
     {
         foreach (array_keys($this->catalog) as $productId) {
             $product = Product::find($productId);
@@ -852,7 +854,7 @@ class DemoDataSeeder extends Seeder
     // ───────────────────────────── Demand model ─────────────────────────────
 
     /** Quotations per month: growth over the years, a construction-season pattern and the 2020 lockdown dip. */
-    private function quotationsPerMonth(CarbonImmutable $month): float
+    protected function quotationsPerMonth(CarbonImmutable $month): float
     {
         $season = [1 => 0.85, 0.90, 1.15, 1.20, 1.15, 0.95, 0.85, 0.85, 0.95, 1.05, 1.10, 1.00][$month->month];
         $lockdown = $month->year === 2020 ? ([3 => 0.7, 4 => 0.35, 5 => 0.5, 6 => 0.75][$month->month] ?? 1.0) : 1.0;
@@ -861,12 +863,12 @@ class DemoDataSeeder extends Seeder
         return 7.0 * (1.09 ** $years) * $season * $lockdown;
     }
 
-    private function monthlyDemand(int $weight, int $min, int $max, int $totalWeight, CarbonImmutable $month): float
+    protected function monthlyDemand(int $weight, int $min, int $max, int $totalWeight, CarbonImmutable $month): float
     {
-        return $this->quotationsPerMonth($month) * 2.2 * ($weight / $totalWeight) * 0.66 * (($min + $max) / 2);
+        return $this->quotationsPerMonth($month) * $this->linesPerQuotation() * ($weight / max(1, $totalWeight)) * 0.66 * (($min + $max) / 2);
     }
 
-    private function lotSize(int $max): int
+    protected function lotSize(int $max): int
     {
         return match (true) {
             $max >= 100 => 50,
@@ -877,27 +879,65 @@ class DemoDataSeeder extends Seeder
         };
     }
 
-    private function roundQuantity(int $qty, int $max): int
+    protected function roundQuantity(int $qty, int $max): int
     {
         $step = $max >= 100 ? 10 : ($max >= 30 ? 5 : 1);
 
         return max($step, (int) (round($qty / $step) * $step));
     }
 
-    private function supplierPrice(Product $product, int $supplierId): float
+    protected function supplierPrice(Product $product, int $supplierId): float
     {
         return round((float) $product->cost_price * $this->supplierProfile[$supplierId]['price'], 2);
     }
 
+    // ───────────────────────────── Hooks for larger data sets ─────────────────────────────
+    // Defaults reproduce this seeder exactly; StagingDataSeeder overrides them.
+
+    /** @return array<int, int> chance weights for the number of lines on a quotation */
+    protected function lineCountWeights(): array
+    {
+        return [1 => 30, 2 => 35, 3 => 22, 4 => 13];
+    }
+
+    /** Average of lineCountWeights(), used to size stock. */
+    protected function linesPerQuotation(): float
+    {
+        return 2.2;
+    }
+
+    /**
+     * Popularity weight per product for the given month. $planning is true when purchasing sizes
+     * an order (a smoothed value), false when a customer picks products.
+     *
+     * @return array<int, int>
+     */
+    protected function demandWeights(CarbonImmutable $month, bool $planning = false): array
+    {
+        return array_map(fn ($c) => $c['weight'], $this->catalog);
+    }
+
+    /** Whether purchasing still restocks the product. */
+    protected function restocks(int $productId): bool
+    {
+        return true;
+    }
+
+    /** Percent of purchase requests that go to the product's usual supplier. */
+    protected function primaryShare(): int
+    {
+        return 75;
+    }
+
     // ───────────────────────────── Engine ─────────────────────────────
 
-    private function at(CarbonImmutable $when, callable $task): void
+    protected function at(CarbonImmutable $when, callable $task): void
     {
         $this->queue->insert([$when->getTimestamp(), ++$this->seq, $task]);
     }
 
     /** A step that needs stock (dispatch, pickup): wait for the purchase to arrive and try again. */
-    private function retrying(CarbonImmutable $when, callable $task, int $tries = 25): void
+    protected function retrying(CarbonImmutable $when, callable $task, int $tries = 25): void
     {
         $this->at($when, function () use ($task, $tries) {
             try {
@@ -918,7 +958,7 @@ class DemoDataSeeder extends Seeder
         });
     }
 
-    private function runQueue(): void
+    protected function runQueue(): void
     {
         $limit = $this->end->getTimestamp();
         $done = 0;
@@ -953,7 +993,7 @@ class DemoDataSeeder extends Seeder
         $this->stats['steps'] = $done;
     }
 
-    private function finish(): void
+    protected function finish(): void
     {
         // PDFs were not stored while seeding; downloads render them on demand.
         DB::table('quotations')->where('team_id', $this->team->id)->where('sent_pdf_path', '')->update(['sent_pdf_path' => null]);
@@ -996,20 +1036,20 @@ class DemoDataSeeder extends Seeder
 
     // ───────────────────────────── Helpers ─────────────────────────────
 
-    private function travel(?CarbonImmutable $to): void
+    protected function travel(?CarbonImmutable $to): void
     {
         $utc = $to?->setTimezone('UTC');
         Carbon::setTestNow($utc ? Carbon::instance($utc) : null);
         CarbonImmutable::setTestNow($utc);
     }
 
-    private function local(): CarbonImmutable
+    protected function local(): CarbonImmutable
     {
         return CarbonImmutable::now()->setTimezone(self::LOCAL_TZ);
     }
 
     /** Move a time into office hours (Mon–Sat, 8:00–17:00 Manila time). */
-    private function businessTime(CarbonImmutable $time): CarbonImmutable
+    protected function businessTime(CarbonImmutable $time): CarbonImmutable
     {
         $time = $time->setTimezone(self::LOCAL_TZ);
         if ($time->hour >= 17) {
@@ -1024,13 +1064,13 @@ class DemoDataSeeder extends Seeder
         return $time;
     }
 
-    private function pickClient(): Client
+    protected function pickClient(): Client
     {
         return $this->clients[$this->weighted(array_column($this->clients, 'weight'))]['client'];
     }
 
     /** @param  array<int|string, int>  $weights */
-    private function weighted(array $weights): int|string
+    protected function weighted(array $weights): int|string
     {
         $roll = mt_rand(1, array_sum($weights));
         foreach ($weights as $key => $weight) {
@@ -1042,12 +1082,12 @@ class DemoDataSeeder extends Seeder
         return array_key_last($weights);
     }
 
-    private function pick(array $values): mixed
+    protected function pick(array $values): mixed
     {
         return $values[mt_rand(0, count($values) - 1)];
     }
 
-    private function paymentReference(string $method): string
+    protected function paymentReference(string $method): string
     {
         $n = ++$this->reference;
 
@@ -1056,12 +1096,12 @@ class DemoDataSeeder extends Seeder
             : sprintf('BT-%s-%06d', now()->format('Ymd'), $n);
     }
 
-    private function count(string $key, int $by = 1): void
+    protected function count(string $key, int $by = 1): void
     {
         $this->stats[$key] = ($this->stats[$key] ?? 0) + $by;
     }
 
-    private function failure(string $message): void
+    protected function failure(string $message): void
     {
         $key = mb_substr(preg_replace('/\d[\d,.\-]*/', '#', $message), 0, 160);
         $this->failures[$key] = ($this->failures[$key] ?? 0) + 1;

@@ -370,6 +370,6 @@ test('message / inquiry is not offered as a record type filter but stays under a
             ->where('counts.all', 3)
             ->missing('counts.inquiry')
             ->where('availableTypes', fn ($types) => ! collect($types)->contains('key', 'inquiry')
-                && collect($types)->count() === 10)
+                && collect($types)->count() === 11)
         );
 });

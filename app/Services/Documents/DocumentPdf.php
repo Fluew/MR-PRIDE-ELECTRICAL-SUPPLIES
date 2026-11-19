@@ -2,6 +2,7 @@
 
 namespace App\Services\Documents;
 
+use App\Models\BiddingEvent;
 use App\Models\DeliveryRelease;
 use App\Models\PaymentReceipt;
 use App\Models\Quotation;
@@ -34,6 +35,21 @@ class DocumentPdf
         $sale->loadMissing(['items', 'quotation']);
 
         return $this->render('documents.sales-order', ['sale' => $sale], 'Sales Order '.$sale->order_number);
+    }
+
+    /** Request for quotation sent to invited suppliers: what is wanted and by when. It carries no internal cost data. */
+    public function rfq(BiddingEvent $event): string
+    {
+        $event->loadMissing(['invitations.supplier', 'purchaseRequest.product']);
+        $pr = $event->purchaseRequest;
+        $item = [
+            'description' => $pr->product?->name ?? $pr->product_description ?? '—',
+            'sku' => $pr->product?->sku,
+            'quantity' => $pr->quantity,
+            'unit' => $pr->unit ?: ($pr->product?->unit ?: 'pcs'),
+        ];
+
+        return $this->render('documents.rfq', ['event' => $event, 'item' => $item], 'Request for Quotation '.$event->reference, 'RFQ '.$event->reference);
     }
 
     public function receipt(PaymentReceipt $receipt): string

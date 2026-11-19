@@ -36,9 +36,11 @@ function publicRequest(array $overrides = []): array
         'company' => 'Acme Builders',
         'contactName' => 'Juan Dela Cruz',
         'email' => 'juan@acme.test',
-        'phone' => '09171234567',
+        'phoneCountry' => '+63',
+        'phone' => '9171234567',
         'projectType' => 'Commercial Building',
         'timeline' => '1-3 months',
+        'brands' => [['brand' => 'Others', 'brand_name' => 'Omron', 'details' => 'Relay 24V', 'quantity' => '4']],
     ];
 }
 
@@ -72,9 +74,10 @@ function collideOnCreate(int $times = PHP_INT_MAX): void
 }
 
 it('numbers the first quotation of the day, then counts up', function () {
-    $this->post('/quotation', publicRequest())->assertSessionHasNoErrors();
-    $this->post('/quotation', publicRequest())->assertSessionHasNoErrors();
-    $this->post('/quotation', publicRequest())->assertSessionHasNoErrors();
+    // Three different requests (an identical resend is not saved twice).
+    $this->post('/quotation', publicRequest(['company' => 'Acme Builders']))->assertSessionHasNoErrors();
+    $this->post('/quotation', publicRequest(['company' => 'Metro Builders']))->assertSessionHasNoErrors();
+    $this->post('/quotation', publicRequest(['company' => 'Apex Builders']))->assertSessionHasNoErrors();
 
     expect(Quotation::orderBy('id')->pluck('quotation_number')->all())
         ->toBe(['Q103026-PROD', 'Q103026-PROD-01', 'Q103026-PROD-02']);

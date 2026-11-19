@@ -172,9 +172,10 @@ class Product extends Model
     {
         $threshold = $this->reorder_level > 0 ? $this->reorder_level : ($this->min_stock > 0 ? $this->min_stock : 10);
 
-        if (! $this->is_active && $this->missing_fields) {
-            $this->status = 'Incomplete'; // not sellable until its missing values (e.g. selling price) are entered
-        } elseif ($this->stock <= 0) {
+        // The status is the stock level, also for a product with missing values (e.g. no selling
+        // price): it is real stock. Such a product stays inactive, so not sellable, and is found
+        // with the Inventory "Incomplete" filter (is_active = false with missing_fields).
+        if ($this->stock <= 0) {
             $this->status = 'Out of Stock';
         } elseif ($this->stock <= $threshold) {
             $this->status = 'Low Stock';

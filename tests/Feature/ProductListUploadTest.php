@@ -591,7 +591,7 @@ it('rejects unsupported, disguised, damaged, protected and empty files with clea
     'executable renamed to .pdf' => [fn () => UploadedFile::fake()->createWithContent('list.pdf', "MZ\x90\x00\x03\x00\x00\x00PE\0\0"), 'unsupported', 'This file is not a document or spreadsheet. Please upload a PDF, Excel (.xlsx/.xls), CSV, JPG or PNG file.'],
     'PHP script renamed to .csv' => [fn () => UploadedFile::fake()->createWithContent('list.csv', "<?php system(\$_GET['c']);"), 'unsupported', 'This file is not a document or spreadsheet. Please upload a PDF, Excel (.xlsx/.xls), CSV, JPG or PNG file.'],
     'shell script renamed to .csv' => [fn () => UploadedFile::fake()->createWithContent('list.csv', "#!/bin/sh\nrm -rf /\n"), 'unsupported', 'This file is not a document or spreadsheet. Please upload a PDF, Excel (.xlsx/.xls), CSV, JPG or PNG file.'],
-    'unsupported type' => [fn () => UploadedFile::fake()->createWithContent('list.docx', 'PK'), 'invalid', 'This file type is not supported. Please upload a PDF, PNG, JPG, JPEG, XLS, XLSX or CSV file.'],
+    'unsupported type' => [fn () => UploadedFile::fake()->createWithContent('list.zip', 'PK'), 'invalid', 'This file type is not supported. Please upload a PDF, Word, Excel, PowerPoint, OpenDocument, text, CSV or picture file (JPG, PNG, TIFF, BMP, WEBP, GIF, HEIC).'],
     'damaged Excel' => [fn () => UploadedFile::fake()->createWithContent('list.xlsx', "PK\x03\x04garbage"), 'corrupted', "This file doesn't look like a valid .xlsx file. It may be damaged, or saved in a different format."],
     'password-protected Excel' => [fn () => UploadedFile::fake()->createWithContent('list.xlsx', "\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1".str_repeat("\0", 600)), 'protected', 'This Excel file is password-protected. Please remove the password and upload it again.'],
     'password-protected PDF' => [fn () => plTablePdf([[['Description', 'Qty', 'Unit']]], name: 'locked.pdf', encrypted: true), 'protected', 'This PDF is password-protected. Please remove the password and upload it again.'],
@@ -691,7 +691,7 @@ it('points out repeated rows without removing them', function () {
 function plRequest(array $overrides = []): array
 {
     return array_merge([
-        'company' => 'Acme Builders', 'contactName' => 'Juan Dela Cruz', 'email' => 'juan@acme.test', 'phone' => '09171234567',
+        'company' => 'Acme Builders', 'contactName' => 'Juan Dela Cruz', 'email' => 'juan@acme.test', 'phoneCountry' => '+63', 'phone' => '9171234567',
         'projectType' => 'Industrial Facility', 'timeline' => '1-3 months',
     ], $overrides);
 }
@@ -870,4 +870,450 @@ it('shows quotation staff the confirmed products in the request', function () {
             ->where('quotations.data.0.request_details.product_list.0', ['description' => 'THHN wire', 'quantity' => 2.5, 'unit' => 'meters', 'source' => 'list.csv'])
             ->where('quotations.data.0.request_details.product_list.1', ['description' => 'PVC Elbow', 'quantity' => 25, 'unit' => null, 'source' => 'two-columns.csv'])
         );
+});
+
+// ============================================================ 9. Expanded file formats (public quotation request)
+//
+// Real Tesseract and Poppler are not needed here: documents are read directly, and the picture-conversion and OCR
+// hand-off steps are checked with the fake OCR above. What these tests do NOT prove is Tesseract's own accuracy.
+
+/** A ZIP file (Office/OpenDocument container) with the given [name => bytes] entries, in order, as an upload. */
+function fxZip(array $entries, string $name, bool $storedFirst = false): UploadedFile
+{
+    $path = tempnam(sys_get_temp_dir(), 'fx');
+    $zip = new ZipArchive;
+    $zip->open($path, ZipArchive::OVERWRITE | ZipArchive::CREATE);
+    foreach ($entries as $entry => $bytes) {
+        $zip->addFromString($entry, $bytes);
+        if ($storedFirst && $entry === array_key_first($entries)) {
+            $zip->setCompressionName($entry, ZipArchive::CM_STORE);
+        }
+    }
+    $zip->close();
+
+    return UploadedFile::fake()->createWithContent($name, (string) file_get_contents($path));
+}
+
+function fxEsc(string $text): string
+{
+    return htmlspecialchars($text, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+}
+
+/** @param  list<string|list<list<string>>>  $blocks  a string is a paragraph; an array of rows is a table */
+function fxDocx(array $blocks, array $extra = [], string $name = 'list.docx'): UploadedFile
+{
+    $body = '';
+    foreach ($blocks as $block) {
+        if (is_string($block)) {
+            $body .= '<w:p><w:r><w:t>'.fxEsc($block).'</w:t></w:r></w:p>';
+        } else {
+            $body .= '<w:tbl>';
+            foreach ($block as $row) {
+                $body .= '<w:tr>'.implode('', array_map(fn ($c) => '<w:tc><w:p><w:r><w:t>'.fxEsc($c).'</w:t></w:r></w:p></w:tc>', $row)).'</w:tr>';
+            }
+            $body .= '</w:tbl>';
+        }
+    }
+
+    return fxZip([
+        '[Content_Types].xml' => '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
+        'word/document.xml' => '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'.$body.'</w:body></w:document>',
+    ] + $extra, $name);
+}
+
+function fxPptx(array $slides, string $name = 'list.pptx'): UploadedFile
+{
+    $entries = [
+        '[Content_Types].xml' => '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
+        'ppt/presentation.xml' => '<?xml version="1.0"?><p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"/>',
+    ];
+    foreach ($slides as $i => $blocks) {
+        $xml = '';
+        foreach ($blocks as $block) {
+            if (is_string($block)) {
+                $xml .= '<a:p><a:r><a:t>'.fxEsc($block).'</a:t></a:r></a:p>';
+            } else {
+                $xml .= '<a:tbl>'.implode('', array_map(fn ($row) => '<a:tr>'.implode('', array_map(fn ($c) => '<a:tc><a:txBody><a:p><a:r><a:t>'.fxEsc($c).'</a:t></a:r></a:p></a:txBody></a:tc>', $row)).'</a:tr>', $block)).'</a:tbl>';
+            }
+        }
+        $entries['ppt/slides/slide'.($i + 1).'.xml'] = '<?xml version="1.0"?><p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'.$xml.'</p:sld>';
+    }
+
+    return fxZip($entries, $name);
+}
+
+function fxOdf(string $kind, string $content, string $name): UploadedFile
+{
+    return fxZip([
+        'mimetype' => "application/vnd.oasis.opendocument.{$kind}",
+        'content.xml' => '<?xml version="1.0"?><office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"><office:body>'.$content.'</office:body></office:document-content>',
+    ], $name, storedFirst: true);
+}
+
+function fxOdt(array $blocks, string $name = 'list.odt'): UploadedFile
+{
+    $xml = '<office:text>';
+    foreach ($blocks as $block) {
+        if (is_string($block)) {
+            $xml .= '<text:p>'.fxEsc($block).'</text:p>';
+        } else {
+            $xml .= '<table:table>'.implode('', array_map(fn ($row) => '<table:table-row>'.implode('', array_map(fn ($c) => '<table:table-cell><text:p>'.fxEsc($c).'</text:p></table:table-cell>', $row)).'</table:table-row>', $block)).'</table:table>';
+        }
+    }
+
+    return fxOdf('text', $xml.'</office:text>', $name);
+}
+
+const FX_TABLE = [['Description', 'Qty', 'Unit'], ['LED Bulb 12W', '10', 'pcs'], ['THHN Wire 3.5mm', '2', 'roll']];
+const FX_ROWS = [['LED Bulb 12W', 10, 'pcs'], ['THHN Wire 3.5mm', 2, 'roll']];
+
+// ---- Word, PowerPoint and OpenDocument are read directly, and tables stay tables
+
+it('reads a Word document\'s table row by row without mixing quantities, descriptions and units', function () {
+    $json = plExtract(fxDocx(['Product list for the Tondo project', FX_TABLE]))->assertOk()->json();
+
+    expect($json['status'])->toBe('ok')->and($json['method'])->toBe('docx')->and($json['ocr'])->toBeFalse()
+        ->and(plRows($json))->toEqual(FX_ROWS);
+});
+
+it('reads a PowerPoint slide table and an OpenDocument text table the same way', function () {
+    $pptx = plExtract(fxPptx([['Materials', FX_TABLE]]))->assertOk()->json();
+    $odt = plExtract(fxOdt(['Materials needed', FX_TABLE]))->assertOk()->json();
+
+    expect(plRows($pptx))->toEqual(FX_ROWS)->and($pptx['method'])->toBe('pptx')
+        ->and(plRows($odt))->toEqual(FX_ROWS)->and($odt['method'])->toBe('odt');
+});
+
+it('reads an OpenDocument spreadsheet (ODS) as a spreadsheet', function () {
+    $rows = '';
+    foreach (FX_TABLE as $row) {
+        $rows .= '<table:table-row>'.implode('', array_map(fn ($c) => '<table:table-cell office:value-type="string"><text:p>'.fxEsc($c).'</text:p></table:table-cell>', $row)).'</table:table-row>';
+    }
+    // The package files and namespaces a real spreadsheet program writes (PhpSpreadsheet's ODS reader needs them).
+    $ns = 'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" xmlns:number="urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" office:version="1.2"';
+    $ods = fxZip([
+        'mimetype' => 'application/vnd.oasis.opendocument.spreadsheet',
+        'META-INF/manifest.xml' => '<?xml version="1.0"?><manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"/>',
+        'meta.xml' => '<?xml version="1.0"?><office:document-meta '.$ns.'/>',
+        'settings.xml' => '<?xml version="1.0"?><office:document-settings '.$ns.'/>',
+        'styles.xml' => '<?xml version="1.0"?><office:document-styles '.$ns.'/>',
+        'content.xml' => '<?xml version="1.0"?><office:document-content '.$ns.'><office:body><office:spreadsheet><table:table table:name="Sheet1">'.$rows.'</table:table></office:spreadsheet></office:body></office:document-content>',
+    ], 'list.ods', storedFirst: true);
+
+    $json = plExtract($ods)->assertOk()->json();
+    expect(plRows($json))->toEqual(FX_ROWS)->and($json['method'])->toBe('spreadsheet');
+});
+
+it('reads a Word document that is only text lines, keeping each line separate', function () {
+    $json = plExtract(fxDocx(['10 pcs LED Bulb 12W', '2 roll THHN Wire 3.5mm']))->assertOk()->json();
+
+    expect($json['status'])->toBe('ok')->and($json['method'])->toBe('text')
+        ->and(array_column($json['items'], 'description'))->toEqual(['LED Bulb 12W', 'THHN Wire 3.5mm']);
+});
+
+// ---- Text formats
+
+it('reads TXT, RTF, HTML (with a table) and SVG text without OCR', function () {
+    $txt = plExtract(UploadedFile::fake()->createWithContent('list.txt', "10 pcs LED Bulb 12W\n2 roll THHN Wire 3.5mm\n"))->assertOk()->json();
+    $rtf = plExtract(UploadedFile::fake()->createWithContent('list.rtf', '{\\rtf1\\ansi{\\fonttbl{\\f0 Arial;}}{\\*\\generator Word;}10 pcs LED Bulb 12W\\par 2 roll THHN Wire 3.5mm\\par}'))->assertOk()->json();
+    $html = plExtract(UploadedFile::fake()->createWithContent('list.html', '<html><head><title>x</title><script>var a=1;</script></head><body><h1>Order</h1><table><tr><th>Description</th><th>Qty</th><th>Unit</th></tr><tr><td>LED Bulb 12W</td><td>10</td><td>pcs</td></tr><tr><td>THHN Wire 3.5mm</td><td>2</td><td>roll</td></tr></table></body></html>'))->assertOk()->json();
+    $svg = plExtract(UploadedFile::fake()->createWithContent('list.svg', '<svg xmlns="http://www.w3.org/2000/svg"><text x="0" y="10">10 pcs LED Bulb 12W</text><text x="0" y="30">2 roll THHN Wire 3.5mm</text></svg>'))->assertOk()->json();
+
+    foreach ([$txt, $rtf, $svg] as $json) {
+        expect(array_column($json['items'], 'description'))->toEqual(['LED Bulb 12W', 'THHN Wire 3.5mm'])->and($json['ocr'])->toBeFalse();
+    }
+    expect(plRows($html))->toEqual(FX_ROWS)->and($html['ocr'])->toBeFalse();
+});
+
+it('decodes RTF escapes, tables and skipped groups correctly', function () {
+    $reader = new App\Services\MaterialList\DocumentReader;
+    $path = tempnam(sys_get_temp_dir(), 'rtf');
+    file_put_contents($path, '{\\rtf1\\ansi{\\fonttbl{\\f0 Arial;}}{\\colortbl;\\red0;}Caf\\\'e9 \\u8364? cable\\tab 10\\cell\\row \\{braces\\} \\par}');
+
+    $read = $reader->read($path, 'rtf');
+    expect($read['lines'][0])->toBe("Café € cable\t10")->and($read['lines'][1])->toBe('{braces}');
+});
+
+// ---- Pictures
+
+it('converts PBM, PGM and PPM pictures to PNG for the OCR, keeping the pixels', function (string $name, string $bytes, int $w, int $h, int $expectedGray) {
+    $file = UploadedFile::fake()->createWithContent($name, $bytes);
+    $reader = new App\Services\MaterialList\DocumentReader;
+    $path = $file->getRealPath();
+
+    expect($reader->detect($path, pathinfo($name, PATHINFO_EXTENSION)))->toBe('image');
+    $png = $reader->toPng($path);
+    expect($png)->not->toBeNull()->and(is_file($png))->toBeTrue();
+    $img = imagecreatefrompng($png);
+    expect([imagesx($img), imagesy($img)])->toBe([$w, $h])
+        ->and(imagecolorat($img, 0, 0) & 0xFF)->toBe($expectedGray);
+    @unlink($png);
+})->with([
+    'P1 ASCII bitmap (1 = black)' => ['a.pbm', "P1\n# c\n2 1\n1 0\n", 2, 1, 0],
+    'P4 binary bitmap' => ['b.pbm', "P4\n8 1\n".chr(0b10000000), 8, 1, 0],
+    'P2 ASCII graymap' => ['c.pgm', "P2\n2 1\n255\n128 255\n", 2, 1, 128],
+    'P5 binary graymap' => ['d.pgm', "P5\n2 1\n255\n".chr(64).chr(255), 2, 1, 64],
+    'P3 ASCII pixmap' => ['e.ppm', "P3\n1 1\n255\n10 20 30\n", 1, 1, 30],
+    'P6 binary pixmap' => ['f.ppm', "P6\n1 1\n255\n".chr(10).chr(20).chr(30), 1, 1, 30],
+]);
+
+it('hands a PGM picture to the OCR as a PNG and reads the words it returns', function () {
+    $fake = plFakeOcr(['Description Qty Unit', 'LED Bulb 12W 10 pcs', 'THHN Wire 3.5mm 2 roll']);
+    // A 4x3 gray picture; the fake OCR stands in for Tesseract.
+    $json = plExtract(UploadedFile::fake()->createWithContent('scan.pgm', "P2\n4 3\n255\n".str_repeat("255 255 255 255\n", 3)))->assertOk()->json();
+
+    expect($json['ocr'])->toBeTrue()->and($fake->calls)->toBeGreaterThan(0)
+        ->and(plRows($json))->toEqual(FX_ROWS);
+});
+
+it('accepts GIF, WEBP and BMP pictures and BMP/WEBP/GIF reach the OCR, and says when a GIF has more than one frame', function () {
+    $fake = plFakeOcr(['Description Qty Unit', 'LED Bulb 12W 10 pcs', 'THHN Wire 3.5mm 2 roll']);
+    $img = imagecreatetruecolor(40, 20);
+    imagefill($img, 0, 0, 0xFFFFFF);
+    foreach (['gif' => fn () => imagegif($img), 'webp' => fn () => imagewebp($img), 'bmp' => fn () => imagebmp($img)] as $ext => $write) {
+        ob_start();
+        $write();
+        $bytes = (string) ob_get_clean();
+        $json = plExtract(UploadedFile::fake()->createWithContent("list.{$ext}", $bytes))->assertOk()->json();
+        expect($json['ocr'])->toBeTrue("{$ext} was read through OCR")->and(plRows($json))->toEqual(FX_ROWS);
+    }
+
+    $two = "GIF89a\x01\x00\x01\x00\x00\x00\x00"."\x00\x21\xF9\x04\x00\x0A\x00\x00\x00\x2C"."\x00\x21\xF9\x04\x00\x0A\x00\x00\x00\x2C";
+    $notes = (new App\Services\MaterialList\DocumentReader)->pictureNotes(tap(tempnam(sys_get_temp_dir(), 'gif'), fn ($p) => file_put_contents($p, $two)));
+    expect($notes)->toHaveCount(1)->and($notes[0])->toContain('2 frames')->toContain('first frame');
+});
+
+it('validates TIFF by its signature and refuses HEIC when no converter is configured, with a clear message', function () {
+    $reader = new App\Services\MaterialList\DocumentReader;
+    $tiff = tap(tempnam(sys_get_temp_dir(), 'tif'), fn ($p) => file_put_contents($p, "II*\x00\x08\x00\x00\x00".str_repeat("\0", 64)));
+    expect($reader->detect($tiff, 'tif'))->toBe('image')->and($reader->detect($tiff, 'tiff'))->toBe('image');
+
+    config(['services.ocr.heif' => null]);
+    plExtract(UploadedFile::fake()->createWithContent('photo.heic', "\x00\x00\x00\x18ftypheic".str_repeat("\0", 200)))
+        ->assertStatus(422)->assertJson(['reason' => 'converter_unavailable'])
+        ->assertJsonPath('message', 'HEIC photos cannot be read on this server. Please save the photo as JPG or PNG and upload that.');
+});
+
+it('refuses legacy .doc and .ppt with a clear message when LibreOffice is not configured', function (string $name) {
+    config(['services.ocr.office' => null]);
+    $ole = "\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1".str_repeat("\0", 600);
+
+    plExtract(UploadedFile::fake()->createWithContent($name, $ole))
+        ->assertStatus(422)->assertJson(['reason' => 'converter_unavailable', 'keep_file' => false]);
+})->with(['old.doc', 'old.ppt']);
+
+// ---- Pictures inside Word and PowerPoint documents are OCR'd, and marked for review
+
+it('reads a picture pasted into a Word document with OCR and marks those rows as OCR', function () {
+    $fake = plFakeOcr(['Description Qty Unit', 'LED Bulb 12W 10 pcs', 'THHN Wire 3.5mm 2 roll']);
+    $img = imagecreatetruecolor(60, 40);
+    imagefill($img, 0, 0, 0xFFFFFF);
+    ob_start();
+    imagepng($img);
+    $png = (string) ob_get_clean();
+
+    $json = plExtract(fxDocx(['Scanned list attached below'], ['word/media/image1.png' => $png.str_repeat("\0", 300)]))->assertOk()->json();
+
+    expect($json['ocr'])->toBeTrue()->and($fake->calls)->toBe(1)
+        ->and(plRows($json))->toEqual(FX_ROWS)
+        ->and(implode(' ', $json['notes']))->toContain('pictures in this document')->toContain('check');
+});
+
+it('says so when pictures in a document cannot be read because OCR is not available, instead of ignoring them', function () {
+    app()->instance(OcrEngine::class, new class extends OcrEngine
+    {
+        public function tesseractAvailable(): bool
+        {
+            return false;
+        }
+    });
+    $img = imagecreatetruecolor(60, 40);
+    ob_start();
+    imagepng($img);
+    $png = (string) ob_get_clean();
+
+    $json = plExtract(fxDocx([FX_TABLE], ['word/media/image1.png' => $png.str_repeat("\0", 300)]))->assertOk()->json();
+
+    expect(plRows($json))->toEqual(FX_ROWS)                                 // the typed table is still read
+        ->and(implode(' ', $json['notes']))->toContain('NOT read');
+});
+
+// ---- Validation and security
+
+it('validates each format by its content, not its extension', function (string $name, string $bytes) {
+    plExtract(UploadedFile::fake()->createWithContent($name, $bytes))->assertStatus(422)->assertJson(['reason' => 'corrupted', 'keep_file' => false]);
+})->with([
+    'a PNG named .gif' => ['x.gif', "\x89PNG\r\n\x1A\n".str_repeat("\0", 100)],
+    'text named .bmp' => ['x.bmp', 'hello, not a bitmap at all'],
+    'a JPEG named .webp' => ['x.webp', "\xFF\xD8\xFF\xE0".str_repeat("\0", 100)],
+    'text named .tif' => ['x.tif', 'not a tiff'],
+    'text named .heic' => ['x.heic', 'not a heic photo'],
+    'garbage named .docx' => ['x.docx', "PK\x03\x04garbage"],
+    'a plain zip named .pptx' => ['x.pptx', "PK\x03\x04".str_repeat("\0", 60)],
+    'a docx named .odt' => ['x.odt', "PK\x03\x04garbage"],
+    'text named .rtf' => ['x.rtf', 'just words'],
+    'binary named .txt' => ['x.txt', "\x00\x01\x02\x03binary\x00"],
+    'text named .pgm' => ['x.pgm', 'P9 nonsense'],
+    'text named .doc' => ['x.doc', 'plain text, not an OLE file'],
+]);
+
+it('refuses programs and server-side code whatever they are called', function (string $name, string $bytes) {
+    plExtract(UploadedFile::fake()->createWithContent($name, $bytes))->assertStatus(422)->assertJson(['keep_file' => false]);
+})->with([
+    'a program named .docx' => ['x.docx', "MZ\x90\x00\x03\x00\x00\x00PE\0\0"],
+    'a shell script named .txt' => ['x.txt', "#!/bin/sh\nrm -rf /\n"],
+    'php named .html' => ['x.html', "<?php system(\$_GET['c']); ?>"],
+    'php named .svg' => ['x.svg', "<?php echo 1;"],
+    'an ELF binary named .rtf' => ['x.rtf', "\x7FELF\x02\x01\x01"],
+]);
+
+it('refuses a zip bomb, a zip with path tricks and an XML entity bomb', function () {
+    $content = '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>';
+    $doc = '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body/></w:document>';
+
+    // Too many entries.
+    $many = ['[Content_Types].xml' => $content, 'word/document.xml' => $doc];
+    for ($i = 0; $i < App\Services\MaterialList\DocumentReader::MAX_ZIP_ENTRIES + 5; $i++) {
+        $many["word/x{$i}.txt"] = 'a';
+    }
+    plExtract(fxZip($many, 'many.docx'))->assertStatus(422)->assertJson(['reason' => 'corrupted']);
+
+    // An entry that climbs out of the folder.
+    plExtract(fxZip(['[Content_Types].xml' => $content, 'word/document.xml' => $doc, '../../evil.php' => '<?php'], 'slip.docx'))->assertStatus(422)->assertJson(['reason' => 'corrupted']);
+
+    // Declared entities ("billion laughs").
+    $bomb = '<?xml version="1.0"?><!DOCTYPE w [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;">]><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>&b;</w:t></w:r></w:p></w:body></w:document>';
+    plExtract(fxZip(['[Content_Types].xml' => $content, 'word/document.xml' => $bomb], 'bomb.docx'))->assertStatus(422)->assertJson(['reason' => 'corrupted']);
+});
+
+it('leaves no temporary files behind after reading documents, pictures and failures', function () {
+    $tmp = storage_path('app/private/tmp');
+    $before = is_dir($tmp) ? count(glob($tmp.'/*')) : 0;
+
+    plFakeOcr(['Description Qty Unit', 'LED Bulb 12W 10 pcs']);
+    plExtract(UploadedFile::fake()->createWithContent('a.pgm', "P2\n2 2\n255\n255 255\n255 255\n"));
+    plExtract(UploadedFile::fake()->createWithContent('b.heic', "\x00\x00\x00\x18ftypheic".str_repeat("\0", 200)));
+    plExtract(fxDocx([FX_TABLE]));
+    plExtract(UploadedFile::fake()->createWithContent('c.docx', 'PK garbage'));
+
+    expect(is_dir($tmp) ? count(glob($tmp.'/*')) : 0)->toBe($before);
+});
+
+it('keeps staff document imports on their original formats', function () {
+    $reader = app(App\Services\MaterialList\FileReader::class);
+    $path = tempnam(sys_get_temp_dir(), 'x');
+    file_put_contents($path, 'plain text');
+
+    // Only the public quotation request reads the wider set; the default reader (staff imports) still refuses it.
+    expect(fn () => $reader->detectType($path, 'list.txt'))->toThrow(App\Services\MaterialList\ExtractionException::class)
+        ->and($reader->forQuotationRequests()->detectType($path, 'list.txt'))->toBe('txt');
+});
+
+it('accepts the new formats when a quotation request is sent, and rejects ones that are not on the list', function () {
+    test()->post('/quotation/product-list/extract', ['file' => UploadedFile::fake()->createWithContent('list.mp3', 'ID3')], ['Accept' => 'application/json'])
+        ->assertStatus(422)->assertJson(['reason' => 'invalid']);
+
+    $this->get('/quotation')->assertInertia(fn ($page) => $page->where('productFileTypes', App\Services\MaterialList\FileReader::QUOTATION_EXTENSIONS));
+});
+
+// ---- Mixed PDFs: text pages from their text layer, scanned pages through OCR, in page order
+
+/** Tesseract/pdftotext TSV for lines laid out on a fixed character grid (5 px per character, 30 px per line). */
+function fxTsv(array $lines): string
+{
+    $tsv = "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n1\t1\t0\t0\t0\t0\t0\t0\t600\t300\t-1\t\n";
+    foreach ($lines as $n => $line) {
+        preg_match_all('/\S+/u', $line, $words, PREG_OFFSET_CAPTURE);
+        foreach ($words[0] as $i => [$word, $byte]) {
+            $tsv .= implode("\t", [5, 1, 1, 1, $n + 1, $i + 1, $byte * 5, 20 + $n * 30, strlen($word) * 5, 12, 95, $word])."\n";
+        }
+    }
+
+    return $tsv;
+}
+
+function fxRow(string $d, string $q, string $u): string
+{
+    return sprintf('%-30s%-10s%s', $d, $q, $u);
+}
+
+/** An OCR engine whose pages are all fake: text pages 1 and 3 from the "text layer", page 2 from "OCR". */
+function fxMixedEngine(bool $canOcr): object
+{
+    $engine = new class($canOcr) extends OcrEngine
+    {
+        public array $ocrPages = [];
+
+        public function __construct(private bool $canOcr) {}
+
+        public function tesseractAvailable(): bool
+        {
+            return $this->canOcr;
+        }
+
+        public function pdfRendererAvailable(): bool
+        {
+            return $this->canOcr;
+        }
+
+        public function pdfTextAvailable(): bool
+        {
+            return true;
+        }
+
+        public function pdfTextTsvPage(string $pdfPath, int $page): ?string
+        {
+            return [
+                1 => fxTsv([fxRow('Description', 'Qty', 'Unit'), fxRow('LED Bulb 12W', '10', 'pcs')]),
+                3 => fxTsv([fxRow('THHN Wire 3.5mm', '2', 'roll')]),
+            ][$page] ?? null;
+        }
+
+        public function pdfTextTsv(string $pdfPath): ?string
+        {
+            // All text pages at once (page 2 contributes nothing: it has no text layer).
+            return fxTsv([fxRow('Description', 'Qty', 'Unit'), fxRow('LED Bulb 12W', '10', 'pcs'), fxRow('THHN Wire 3.5mm', '2', 'roll')]);
+        }
+
+        public function pdfPagesToTsv(string $pdfPath, array $pages): array
+        {
+            $this->ocrPages = $pages;
+
+            return array_fill_keys($pages, fxTsv([fxRow('Circuit Breaker 20A', '5', 'pcs')]));
+        }
+    };
+    app()->instance(OcrEngine::class, $engine);
+
+    return $engine;
+}
+
+it('reads a PDF with text pages and a scanned page page by page, in order, and reports the scanned page', function () {
+    $engine = fxMixedEngine(canOcr: true);
+    $pdf = plTablePdf([
+        [['Description', 'Qty', 'Unit'], ['LED Bulb 12W warm white', '10', 'pcs'], ['Extension cord 5m with surge protector', '4', 'pcs']],
+        [],                                                         // page 2: no text layer (a scan)
+        [['THHN Wire 3.5mm solid copper', '2', 'roll'], ['Junction box 4x4 galvanized', '12', 'pcs']],
+    ]);
+
+    $json = plExtract($pdf)->assertOk()->json();
+
+    expect($engine->ocrPages)->toBe([2])                            // only the scanned page went through OCR
+        ->and($json['method'])->toBe('pdf-ocr')->and($json['ocr'])->toBeTrue()
+        ->and(array_column($json['items'], 'description'))->toBe(['LED Bulb 12W', 'Circuit Breaker 20A', 'THHN Wire 3.5mm'])   // page order kept
+        ->and(implode(' ', $json['notes']))->toContain('Page 2')->toContain('OCR')->toContain('check');
+});
+
+it('still reads the text pages of a mixed PDF when OCR is not available, and says which pages were not read', function () {
+    $engine = fxMixedEngine(canOcr: false);
+    $pdf = plTablePdf([
+        [['Description', 'Qty', 'Unit'], ['LED Bulb 12W warm white', '10', 'pcs'], ['Extension cord 5m with surge protector', '4', 'pcs']],
+        [],
+        [['THHN Wire 3.5mm solid copper', '2', 'roll'], ['Junction box 4x4 galvanized', '12', 'pcs']],
+    ]);
+
+    $json = plExtract($pdf)->assertOk()->json();
+
+    expect($engine->ocrPages)->toBe([])                             // nothing was invented for the scanned page
+        ->and(array_column($json['items'], 'description'))->toBe(['LED Bulb 12W', 'THHN Wire 3.5mm'])
+        ->and(implode(' ', $json['notes']))->toContain('Page 2')->toContain('NOT read');
 });

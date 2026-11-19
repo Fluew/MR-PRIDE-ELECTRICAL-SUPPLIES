@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Auth\ChangePasswordController;
+use App\Http\Controllers\BiddingController;
 use App\Http\Controllers\Auth\DeviceVerificationController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\DashboardController;
@@ -19,6 +20,7 @@ use App\Http\Controllers\QuotationController;
 use App\Http\Controllers\RecycleBinController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SaleController;
+use App\Http\Controllers\SupplierCatalogController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\Teams\TeamInvitationController;
 use App\Http\Controllers\UserController;
@@ -211,6 +213,10 @@ Route::prefix('{current_team}')
             Route::get('inventory/history', [InventoryController::class, 'history'])->name('inventory.history');
             Route::get('inventory/export-csv', [InventoryController::class, 'exportCsv'])->name('inventory.export-csv');
             Route::get('inventory/export', [InventoryController::class, 'export'])->name('inventory.export');
+            // Supplier Product Catalog: supplier offers and USD costs before inventory registration
+            Route::get('inventory/supplier-catalog', [SupplierCatalogController::class, 'index'])->name('inventory.supplier-catalog.index');
+            Route::get('inventory/supplier-catalog/{catalogProduct}', [SupplierCatalogController::class, 'show'])->whereNumber('catalogProduct')->name('inventory.supplier-catalog.show');
+            Route::post('inventory/supplier-catalog/{catalogProduct}/register', [SupplierCatalogController::class, 'register'])->whereNumber('catalogProduct')->name('inventory.supplier-catalog.register');
         });
 
         // Suppliers & AHP Evaluation Module (Admin and Suppliers Staff)
@@ -253,6 +259,7 @@ Route::prefix('{current_team}')
             Route::post('procurement', [ProcurementWorkflowController::class, 'submitRequests'])->name('procurement.store');
             Route::post('procurement/requests', [ProcurementWorkflowController::class, 'submitRequests'])->name('procurement.requests.store');
             Route::post('procurement/requests/{purchaseRequest}/submit', [ProcurementWorkflowController::class, 'submitDraft'])->name('procurement.requests.submit');
+            Route::get('procurement/catalog-prices', [SupplierCatalogController::class, 'procurementOptions'])->name('procurement.catalog-prices');
         });
 
         // Document imports: inventory products (Inventory module) and supplier quotations (Quotations module).
@@ -279,6 +286,22 @@ Route::prefix('{current_team}')
         // Procurement Module (Admin and Procurement Staff)
         Route::middleware('role:admin,staff_procurement')->group(function () {
             Route::get('procurement', [PurchaseRequestController::class, 'index'])->name('procurement.index');
+            // Staff-managed supplier bidding (RFQ). Suppliers have no accounts; staff record the quotations they send.
+            Route::get('procurement/bidding', [BiddingController::class, 'index'])->name('procurement.bidding.index');
+            Route::post('procurement/bidding', [BiddingController::class, 'store'])->middleware('throttle:30,1')->name('procurement.bidding.store');
+            Route::get('procurement/bidding/{biddingEvent}', [BiddingController::class, 'show'])->whereNumber('biddingEvent')->name('procurement.bidding.show');
+            Route::post('procurement/bidding/{biddingEvent}/suppliers', [BiddingController::class, 'invite'])->whereNumber('biddingEvent')->name('procurement.bidding.invite');
+            Route::delete('procurement/bidding/{biddingEvent}/suppliers/{supplier}', [BiddingController::class, 'uninvite'])->whereNumber(['biddingEvent', 'supplier'])->name('procurement.bidding.uninvite');
+            Route::delete('procurement/bidding/{biddingEvent}', [BiddingController::class, 'destroy'])->middleware('admin_delete')->whereNumber('biddingEvent')->name('procurement.bidding.destroy');
+            Route::post('procurement/bidding/{biddingEvent}/issue', [BiddingController::class, 'issue'])->whereNumber('biddingEvent')->name('procurement.bidding.issue');
+            Route::post('procurement/bidding/{biddingEvent}/close', [BiddingController::class, 'close'])->whereNumber('biddingEvent')->name('procurement.bidding.close');
+            Route::post('procurement/bidding/{biddingEvent}/cancel', [BiddingController::class, 'cancel'])->whereNumber('biddingEvent')->name('procurement.bidding.cancel');
+            Route::post('procurement/bidding/{biddingEvent}/bids', [BiddingController::class, 'recordBid'])->whereNumber('biddingEvent')->middleware('throttle:60,1')->name('procurement.bidding.bids.store');
+            Route::post('procurement/bidding/{biddingEvent}/bids/{bid}', [BiddingController::class, 'reviseBid'])->whereNumber(['biddingEvent', 'bid'])->middleware('throttle:60,1')->name('procurement.bidding.bids.revise');
+            Route::get('procurement/bidding/{biddingEvent}/bids/{bid}/document', [BiddingController::class, 'document'])->whereNumber(['biddingEvent', 'bid'])->name('procurement.bidding.bids.document');
+            Route::get('procurement/bidding/{biddingEvent}/rfq', [BiddingController::class, 'rfq'])->whereNumber('biddingEvent')->name('procurement.bidding.rfq');
+            // Owner decision: administrators only (the controller and BiddingWorkflow both enforce it).
+            Route::post('procurement/bidding/{biddingEvent}/award', [BiddingController::class, 'award'])->whereNumber('biddingEvent')->middleware('throttle:20,1')->name('procurement.bidding.award');
             Route::delete('procurement/{purchaseRequest}', [PurchaseRequestController::class, 'destroy'])->middleware('admin_delete')->whereNumber('purchaseRequest')->name('procurement.destroy');
 
             // Inventory-to-Procurement workflow (rules in Services/Procurement/ProcurementWorkflow)

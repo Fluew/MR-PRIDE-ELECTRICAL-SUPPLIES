@@ -42,7 +42,7 @@ function wfRequest(array $overrides = []): array
         'company' => 'Acme Builders',
         'contactName' => 'Juan Dela Cruz',
         'email' => 'juan@acme.test',
-        'phone' => '09171234567',
+        'phoneCountry' => '+63', 'phone' => '9171234567',
         'projectType' => 'Industrial Facility',
         'timeline' => '1-3 months',
     ], $overrides);
@@ -64,12 +64,12 @@ function wfPdf(string $name = 'products.pdf'): UploadedFile
 
 // --- 1. No material list ---------------------------------------------------------------------
 
-it('accepts a request with only contact and project details', function () {
-    $this->post('/quotation', wfRequest())->assertSessionHasNoErrors();
+it('refuses a request with only contact and project details: a product or a product list is needed', function () {
+    $this->post('/quotation', wfRequest())->assertSessionHasErrors('brands');
+    expect(Quotation::count())->toBe(0);
 
-    $quotation = Quotation::with('items')->sole();
-    expect($quotation->status)->toBe(QuotationStatus::Draft)
-        ->and($quotation->items)->toHaveCount(0);
+    $this->post('/quotation', wfRequest(['brands' => [['brand' => 'Others', 'brand_name' => 'Omron', 'details' => 'Relay 24V', 'quantity' => '4']]]))->assertSessionHasNoErrors();
+    expect(Quotation::sole()->status)->toBe(QuotationStatus::Draft);
 });
 
 it('ignores material lists and specification files sent to the removed fields', function () {
@@ -78,10 +78,12 @@ it('ignores material lists and specification files sent to the removed fields', 
         'materials_confirmed' => true,
         'material_token' => str_repeat('a', 40),
         'attachment' => wfPdf('boq.pdf'),
+        'brands' => [['brand' => 'Others', 'brand_name' => 'Omron', 'details' => 'Relay 24V', 'quantity' => '4']],
     ]))->assertSessionHasNoErrors();
 
     $quotation = Quotation::with('items', 'files')->sole();
-    expect($quotation->items)->toHaveCount(0)
+    // Only the product the form asked for is kept: nothing from the removed fields.
+    expect($quotation->items->pluck('sku')->all())->toBe(['OTHERS'])
         ->and($quotation->files)->toHaveCount(0)
         ->and($quotation->attachment_path)->toBeNull()
         ->and($quotation->material_file_path)->toBeNull()
@@ -148,7 +150,7 @@ it('accepts product-list files up to 25 MB each, more than the old 10 MB / 20 MB
 it('saves brands, project details and files together as a request awaiting review', function () {
     $this->post('/quotation', wfRequest([
         'timeline' => '3–6 months',
-        'brands' => [['brand' => 'schneider electric', 'details' => '20A breakers']],
+        'brands' => [['brand' => 'schneider electric', 'details' => '20A breakers', 'quantity' => '4']],
         'hasUnlistedBrands' => true,
         'unlistedBrands' => 'Omron',
         'productFiles' => [wfPdf()],
@@ -160,7 +162,7 @@ it('saves brands, project details and files together as a request awaiting revie
             'source' => 'public_form',
             'project_type' => 'Industrial Facility',
             'timeline' => '3-6 months',
-            'brands' => [['brand' => 'Schneider Electric', 'details' => '20A breakers']],
+            'brands' => [['brand' => 'Schneider Electric', 'details' => '20A breakers', 'quantity' => 4]],
             'unlisted_brands' => 'Omron',
         ])
         ->and($quotation->request_details['submitted_at'])->not->toBeEmpty()

@@ -72,6 +72,19 @@ class DashboardController extends Controller
                 Carbon::create($curYear, 12, 31),
                 SmaForecaster::DEFAULT_WINDOW,
             );
+            // Months that have not happened yet have no demand (not zero), and the running month is only
+            // partly over: it is shown on its own as "so far", not as a finished month on the line.
+            $currentMonth = today()->format('Y-m');
+            $forecastSeries['partial'] = array_fill(0, count($forecastSeries['months']), null);
+            foreach ($forecastSeries['months'] as $i => $month) {
+                if ($month === $currentMonth) {
+                    $forecastSeries['partial'][$i] = $forecastSeries['historical'][$i];
+                }
+                if ($month >= $currentMonth) {
+                    $forecastSeries['historical'][$i] = null;
+                }
+            }
+            $forecastSeries['window'] = SmaForecaster::DEFAULT_WINDOW;
 
             $productCounts = Product::where('team_id', $team->id)
                 ->where('is_active', true)

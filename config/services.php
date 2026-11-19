@@ -43,6 +43,9 @@ return [
         'pdftotext' => env('PDFTOTEXT_PATH'), // default: next to pdftoppm
         'lang' => env('TESSERACT_LANG', 'eng'),
         'timeout' => (int) env('OCR_TIMEOUT', 60), // seconds per page
+        // Optional converters. Without them legacy .doc/.ppt and HEIC/HEIF files are refused with a clear message.
+        'office' => env('OFFICE_CONVERTER_PATH'),   // LibreOffice: soffice / soffice.exe
+        'heif' => env('HEIF_CONVERTER_PATH'),       // ImageMagick (magick) or libheif (heif-convert)
     ],
 
     'ses' => [

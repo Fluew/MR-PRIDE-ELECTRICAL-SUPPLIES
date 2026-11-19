@@ -36,6 +36,21 @@ class FileReader
 
     public const EXTENSIONS = ['pdf', 'xlsx', 'xls', 'csv', 'jpg', 'jpeg', 'png'];
 
+    /**
+     * Formats added for the public quotation request only (see forQuotationRequests()); staff imports keep EXTENSIONS.
+     * Every one is validated by its contents and read by DocumentReader or an existing reader: none is "assumed".
+     */
+    public const QUOTATION_EXTRA_EXTENSIONS = [
+        'gif', 'webp', 'bmp', 'tif', 'tiff', 'pbm', 'pgm', 'ppm', 'heic', 'heif',
+        'doc', 'docx', 'ppt', 'pptx', 'ods', 'odt', 'odp',
+        'txt', 'rtf', 'html', 'htm', 'svg',
+    ];
+
+    public const QUOTATION_EXTENSIONS = [...self::EXTENSIONS, ...self::QUOTATION_EXTRA_EXTENSIONS];
+
+    /** A page with fewer letters than this in its text layer is a scanned page. */
+    public const SCANNED_PAGE_LETTERS = 10;
+
     /** Limits for this reader. The defaults are the public quotation form's; see forStaffImports(). */
     private int $maxBytes = self::MAX_BYTES;
 
@@ -44,6 +59,9 @@ class FileReader
     private ?int $maxRows = self::MAX_ROWS;
 
     private int $maxSheets = self::MAX_SHEETS;
+
+    /** The public quotation request: more formats are accepted (QUOTATION_EXTENSIONS) and mixed PDFs are read page by page. */
+    private bool $quotationRequests = false;
 
     /** Return the rows of every sheet (each keeps its own header row) instead of the best one. */
     private bool $allSheets = false;
@@ -54,7 +72,26 @@ class FileReader
     /** A technical cap only: each scanned page takes seconds of OCR. */
     public const STAFF_MAX_PDF_PAGES = 300;
 
-    public function __construct(private OcrEngine $ocr) {}
+    private ?DocumentReader $documentReader;
+
+    public function __construct(private OcrEngine $ocr, ?DocumentReader $documents = null)
+    {
+        $this->documentReader = $documents;
+    }
+
+    public function documents(): DocumentReader
+    {
+        return $this->documentReader ??= new DocumentReader;
+    }
+
+    /** The public quotation request form: the wider set of formats, with the same 25 MB and 20-page limits. */
+    public function forQuotationRequests(): static
+    {
+        $copy = clone $this;
+        $copy->quotationRequests = true;
+
+        return $copy;
+    }
 
     public function forStaffImports(): static
     {
@@ -76,7 +113,8 @@ class FileReader
     public function detectType(string $path, string $originalName): string
     {
         $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
-        if (! in_array($ext, self::EXTENSIONS, true)) {
+        $extended = $this->quotationRequests && in_array($ext, self::QUOTATION_EXTRA_EXTENSIONS, true);
+        if (! $extended && ! in_array($ext, self::EXTENSIONS, true)) {
             throw new ExtractionException('This file type is not supported. Please upload a PDF, Excel (.xlsx/.xls), CSV, JPG or PNG file.', 'unsupported');
         }
 
@@ -91,9 +129,14 @@ class FileReader
         $head = (string) file_get_contents($path, false, null, 0, 8);
         $bad = fn () => new ExtractionException("This file doesn't look like a valid .{$ext} file. It may be damaged, or saved in a different format.", 'corrupted');
 
-        // Programs and scripts renamed to a document name are refused outright.
-        if (self::isExecutable($path)) {
+        // Programs and scripts renamed to a document name are refused outright. (An .html file is ordinary markup that is only
+        // ever read as text; DocumentReader refuses server-side code in it.)
+        if (self::isExecutable($path) && ! ($extended && in_array($ext, ['html', 'htm'], true))) {
             throw new ExtractionException('This file is not a document or spreadsheet. Please upload a PDF, Excel (.xlsx/.xls), CSV, JPG or PNG file.', 'unsupported');
+        }
+
+        if ($extended) {
+            return $this->documents()->detect($path, $ext);
         }
 
         switch ($ext) {
@@ -200,10 +243,64 @@ class FileReader
     {
         return match ($type) {
             'csv' => ['method' => 'csv', 'rows' => $this->readCsv($path)],
-            'xlsx', 'xls' => $this->readSpreadsheet($path, $type),
+            'xlsx', 'xls', 'ods' => $this->readSpreadsheet($path, $type),
             'pdf' => $this->readPdf($path),
-            'image' => ['method' => 'ocr', 'pages' => [$this->ocr->imageToText($path)]],
+            'image' => ['method' => 'ocr', 'pages' => [$this->withOcrImage($path, fn (string $png) => $this->ocr->imageToText($png))]],
+            'doc', 'ppt' => $this->readLegacyOffice($path, $type),
+            default => $this->readDocument($path, $type),
         };
+    }
+
+    /**
+     * A document read directly (not as a picture): its tables as rows and its text as lines, in the shape the
+     * rest of the pipeline uses. 'rows' holds every table's rows when there are tables.
+     */
+    private function readDocument(string $path, string $type): array
+    {
+        $doc = $this->documents()->read($path, $type);
+        $result = ['method' => $doc['method'], 'tables' => $doc['tables'], 'lines' => $doc['lines'], 'pages' => [implode("\n", $doc['lines'])], 'notes' => $doc['notes']];
+        if ($doc['tables'] !== []) {
+            $result['rows'] = array_merge(...array_map(fn ($t) => $t['rows'], $doc['tables']));
+        }
+
+        return $result;
+    }
+
+    /** Legacy .doc/.ppt: converted to .docx/.pptx by LibreOffice when it is configured, then read like any other. */
+    private function readLegacyOffice(string $path, string $type): array
+    {
+        [$converted, $modern] = $this->documents()->convertLegacyOffice($path, $type);
+        try {
+            if (! $this->documents()->detect($converted, $modern)) {
+                throw new ExtractionException('We could not open this file.', 'corrupted');
+            }
+
+            return $this->readDocument($converted, $modern);
+        } finally {
+            @unlink($converted);
+        }
+    }
+
+    /**
+     * Run $fn on a picture the OCR can take: the file itself, or a PNG converted from a format Tesseract cannot read
+     * (PBM/PGM/PPM, HEIC/HEIF). The converted copy is removed afterwards.
+     */
+    private function withOcrImage(string $path, callable $fn): mixed
+    {
+        $converted = $this->quotationRequests ? $this->documents()->toPng($path) : null;
+        try {
+            return $fn($converted ?? $path);
+        } finally {
+            if ($converted !== null) {
+                @unlink($converted);
+            }
+        }
+    }
+
+    /** Tesseract TSV (words, positions, confidence) of a picture, converting it first when its format needs that. */
+    public function imageTsv(string $path): string
+    {
+        return $this->withOcrImage($path, fn (string $png) => $this->ocr->imageToTsv($png));
     }
 
     /**
@@ -217,7 +314,7 @@ class FileReader
         $coverage = null;
         try {
             if ($type === 'image') {
-                [$lines, $coverage] = self::linesFromTsv($this->ocr->imageToTsv($path));
+                [$lines, $coverage] = self::linesFromTsv($this->imageTsv($path));
             } else {
                 $content = $this->read($path, $type);
                 $lines = isset($content['rows'])
@@ -374,7 +471,7 @@ class FileReader
     private function readSpreadsheet(string $path, string $type): array
     {
         try {
-            $reader = IOFactory::createReader($type === 'xlsx' ? 'Xlsx' : 'Xls');
+            $reader = IOFactory::createReader(['xlsx' => 'Xlsx', 'ods' => 'Ods'][$type] ?? 'Xls');
             // Cell formats are read too, so a date cell can be told apart from a plain number.
             $reader->setReadDataOnly(false);
             $reader->setReadEmptyCells(false);
@@ -492,20 +589,75 @@ class FileReader
     public function readTable(string $path, string $type, callable $isHeader): ?array
     {
         if ($type === 'image') {
-            return ['method' => 'ocr'] + WordTable::build([$this->ocr->imageToTsv($path)], $isHeader, true);
+            return ['method' => 'ocr', 'notes' => $this->quotationRequests ? $this->documents()->pictureNotes($path) : []] + WordTable::build([$this->imageTsv($path)], $isHeader, true);
         }
         if ($type !== 'pdf') {
             return null;
         }
 
-        ['pages' => $pages, 'scanned' => $scanned] = $this->inspectPdf($path);
+        ['pages' => $pages, 'scanned' => $scanned, 'scanned_pages' => $scannedPages] = $this->inspectPdf($path);
         if ($scanned) {
             return ['method' => 'pdf-ocr'] + WordTable::build($this->ocr->pdfToTsv($path, count($pages)), $isHeader, true);
+        }
+
+        // Some pages have a text layer and some are scans: each page is read the way it needs, in page order.
+        if ($this->quotationRequests && $scannedPages !== []) {
+            return $this->readMixedPdf($path, count($pages), $scannedPages, $isHeader);
         }
 
         $tsv = $this->ocr->pdfTextTsv($path);
 
         return $tsv === null ? null : ['method' => 'pdf-text'] + WordTable::build([$tsv], $isHeader, false);
+    }
+
+    /**
+     * A PDF with both text pages and scanned pages. Text pages come from their text layer, scanned pages go through OCR,
+     * and the pages stay in order. When OCR or Poppler is not available the text pages are still read and the scanned
+     * pages are reported (never silently dropped, never invented).
+     *
+     * @param  list<int>  $scannedPages  1-based
+     * @param  callable(array<int, string>): bool  $isHeader
+     * @return array{method: string, aligned: bool, rows: array<int, array<int, string>>, notes: list<string>}|null
+     */
+    private function readMixedPdf(string $path, int $pageCount, array $scannedPages, callable $isHeader): ?array
+    {
+        $list = $this->pageList($scannedPages);
+        $canOcr = $this->ocr->tesseractAvailable() && $this->ocr->pdfRendererAvailable() && $this->ocr->pdfTextAvailable();
+        if (! $canOcr) {
+            $tsv = $this->ocr->pdfTextTsv($path);
+
+            return $tsv === null ? null : ['method' => 'pdf-text', 'notes' => ["{$list} of this PDF are scans, and text recognition (OCR) is not available on the server. Those pages were NOT read: please check the list or type the missing products."]]
+                + WordTable::build([$tsv], $isHeader, false);
+        }
+
+        $pages = [];
+        $ocrPages = [];
+        for ($p = 1; $p <= $pageCount; $p++) {
+            $tsv = in_array($p, $scannedPages, true) ? null : $this->ocr->pdfTextTsvPage($path, $p);
+            if ($tsv === null) {
+                $ocrPages[] = $p;      // a scanned page, or a text page whose text could not be extracted
+            }
+            $pages[$p] = $tsv;
+        }
+        foreach ($this->ocr->pdfPagesToTsv($path, $ocrPages) as $p => $tsv) {
+            $pages[$p] = $tsv;
+        }
+        ksort($pages);
+
+        return ['method' => 'pdf-ocr', 'notes' => [$this->pageList($ocrPages).' of this PDF were read with text recognition (OCR), the other pages from their text. Please check the rows from scanned pages.']]
+            + WordTable::build(array_values(array_map(fn ($t) => (string) $t, $pages)), $isHeader, true);
+    }
+
+    /** "Page 2" / "Pages 2 and 4" / "Pages 2, 3 and 5". */
+    private function pageList(array $pages): string
+    {
+        $pages = array_values($pages);
+        if (count($pages) === 1) {
+            return 'Page '.$pages[0];
+        }
+        $last = array_pop($pages);
+
+        return 'Pages '.implode(', ', $pages).' and '.$last;
     }
 
     /**
@@ -519,7 +671,7 @@ class FileReader
     public function readWords(string $path, string $type): ?array
     {
         if ($type === 'image') {
-            return ['method' => 'ocr', 'tsv' => [$this->ocr->imageToTsv($path)]];
+            return ['method' => 'ocr', 'tsv' => [$this->imageTsv($path)]];
         }
         if ($type !== 'pdf') {
             return null;
@@ -549,7 +701,8 @@ class FileReader
     /**
      * Open a PDF, check its page count, and tell whether it is scanned (little or no text layer).
      *
-     * @return array{pages: array<int, string>, scanned: bool} text per page
+     * @return array{pages: array<int, string>, scanned: bool, scanned_pages: list<int>} text per page; the 1-based pages with no text layer,
+     *                                                                             listed only when the document as a whole has text
      */
     private function inspectPdf(string $path): array
     {
@@ -573,7 +726,18 @@ class FileReader
 
         $texts = array_map(fn ($p) => (string) $p->getText(), $pages);
         $letters = preg_match_all('/\p{L}/u', implode(' ', $texts));
+        $scanned = $letters < 25 * count($pages);
 
-        return ['pages' => $texts, 'scanned' => $letters < 25 * count($pages)];
+        // Pages with (almost) no text layer inside a document that otherwise has text: scanned pages in a mixed PDF.
+        $scannedPages = [];
+        if (! $scanned) {
+            foreach (array_values($texts) as $i => $text) {
+                if (preg_match_all('/\p{L}/u', $text) < self::SCANNED_PAGE_LETTERS) {
+                    $scannedPages[] = $i + 1;
+                }
+            }
+        }
+
+        return ['pages' => $texts, 'scanned' => $scanned, 'scanned_pages' => $scannedPages];
     }
 }

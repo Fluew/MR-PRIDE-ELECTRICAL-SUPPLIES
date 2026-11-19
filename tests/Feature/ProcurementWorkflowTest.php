@@ -65,6 +65,26 @@ function asAdmin($t)
     return $t->actingAs($t->admin)->withCookies($t->adminCookies);
 }
 
+test('the new request product list includes low and out-of-stock products that are waiting for a selling price', function () {
+    $incomplete = fn (string $sku, int $stock) => Product::create(['team_id' => $this->team->id, 'sku' => $sku, 'name' => "Cable {$sku}", 'price' => null, 'cost_price' => 40,
+        'stock' => $stock, 'reorder_level' => 10, 'is_active' => false, 'missing_fields' => ['price'], 'unit' => 'roll']);
+    $out = $incomplete('CBL-0', 0);
+    $low = $incomplete('CBL-3', 3);
+    $deactivated = Product::create(['team_id' => $this->team->id, 'sku' => 'OLD-1', 'name' => 'Discontinued lamp', 'price' => 5, 'stock' => 0, 'reorder_level' => 10, 'is_active' => false, 'unit' => 'pcs']);
+
+    $ids = collect(asStaff($this)->get("{$this->url}/procurement")->assertOk()->viewData('page')['props']['products'])->pluck('id');
+    expect($ids)->toContain($out->id, $low->id, $this->product->id)->not->toContain($deactivated->id);
+
+    // It can be requested even though it cannot be sold yet.
+    asStaff($this)->post("{$this->url}/procurement/requests", ['lines' => [['product_id' => $low->id, 'quantity' => 20, 'justification' => 'Low stock.']]])
+        ->assertSessionHasNoErrors();
+    expect(PurchaseRequest::sole()->product_id)->toBe($low->id);
+
+    // A product an admin deactivated still cannot.
+    asStaff($this)->post("{$this->url}/procurement/requests", ['lines' => [['product_id' => $deactivated->id, 'quantity' => 5, 'justification' => 'x']]])
+        ->assertSessionHasErrors('lines.0.product_id');
+});
+
 function approvedRequest($t, int $qty = 100): PurchaseRequest
 {
     asStaff($t)->post("{$t->url}/procurement/requests", ['lines' => [['product_id' => $t->product->id, 'quantity' => $qty, 'justification' => 'Below reorder level.']]]);

@@ -1,5 +1,6 @@
 import { usePage } from '@inertiajs/vue3';
 import { computed, effectScope, reactive, watch } from 'vue';
+import { isPrivacyHidden, PRIVACY_MASK } from '@/composables/usePrivacyMode';
 import { rate as rateRoute, update as updateRoute } from '@/routes/currency';
 
 /**
@@ -233,11 +234,18 @@ export function useCurrency() {
 
     /** Format a stored USD amount in the display currency, e.g. "$1,000.00" or "₱63,838.00". */
     function formatMoney(usd: unknown, options: { decimals?: number } = {}): string {
+        // Privacy Mode: only the displayed text changes; the amount itself is untouched.
+        if (isPrivacyHidden()) {
+            return PRIVACY_MASK;
+        }
         return formatterFor(displayCurrency.value, options.decimals).format(toDisplayAmount(usd));
     }
 
     /** Format a number that is already in the display currency (chart axis and tooltip values). */
     function formatDisplayAmount(value: unknown, options: { decimals?: number } = {}): string {
+        if (isPrivacyHidden()) {
+            return PRIVACY_MASK;
+        }
         return formatterFor(displayCurrency.value, options.decimals).format(toNumber(value));
     }
 

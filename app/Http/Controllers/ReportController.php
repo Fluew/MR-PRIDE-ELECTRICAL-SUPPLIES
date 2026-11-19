@@ -17,6 +17,7 @@ use App\Services\Inventory\ProductPrioritizer;
 use App\Services\Reports\ReportTableExporter;
 use App\Services\Suppliers\SupplierEvaluator;
 use App\Support\Csv;
+use App\Support\DateNormalizer;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -60,11 +61,12 @@ class ReportController extends Controller
                 $fromDate = $today->copy()->startOfYear();
                 break;
             case 'custom':
-                if ($request->filled('from_date')) {
-                    $fromDate = Carbon::parse($request->input('from_date'))->startOfDay();
+                // A date that cannot be read is ignored (as if it was not given), never a server error.
+                if ($from = DateNormalizer::carbonOrNull($request->input('from_date'))) {
+                    $fromDate = $from->startOfDay();
                 }
-                if ($request->filled('to_date')) {
-                    $toDate = Carbon::parse($request->input('to_date'))->endOfDay();
+                if ($to = DateNormalizer::carbonOrNull($request->input('to_date'))) {
+                    $toDate = $to->endOfDay();
                 }
                 break;
             case 'all_time':
@@ -113,8 +115,12 @@ class ReportController extends Controller
             $quotesQuery->where('quotation_date', '>=', $fromDate)->where('quotation_date', '<=', $toDate);
         }
         $quotationsCount = $quotesQuery->count();
-        $pendingQuotationsCount = (clone $quotesQuery)->where('status', 'Pending')->count();
-        $pendingQuotationsValue = (float) (clone $quotesQuery)->where('status', 'Pending')->sum('grand_total');
+        // Pending = waiting for the administrator: a Draft submitted for approval and not approved yet.
+        // ("Pending" is not a quotation status, so filtering on it always gave zero.)
+        $pendingQuotes = (clone $quotesQuery)->where('status', QuotationStatus::Draft->value)
+            ->whereNotNull('submitted_for_approval_at')->whereNull('approved_at');
+        $pendingQuotationsCount = (clone $pendingQuotes)->count();
+        $pendingQuotationsValue = (float) (clone $pendingQuotes)->sum('grand_total');
         $approvedQuotationsCount = (clone $quotesQuery)->where(fn ($q) => $q->whereNotNull('approved_at')->orWhereIn('status', [QuotationStatus::Sent->value, QuotationStatus::Accepted->value]))->count();
         $convertedQuotationsCount = (clone $quotesQuery)->whereNotNull('converted_to_sale_id')->count();
 
@@ -541,12 +547,13 @@ class ReportController extends Controller
             // AHP Product Prioritization (moved here from Inventory): rankings, reorder
             // recommendations and the forecasting period (3, 6 or 12 months = the SMA window).
             'productPriority' => [
-                'items' => array_values(app(ProductPrioritizer::class)->forTeam($team->id, null, $priorityMonths)),
+                'items' => array_values(app(ProductPrioritizer::class)->forTeam($team->id, null, $request->filled('forecast_months') ? $priorityMonths : null)),
                 'weights' => config('evaluation.product_priority.weights'),
                 'classes' => config('evaluation.product_priority.classes'),
                 'movementMonths' => (int) config('evaluation.product_priority.movement_months'),
                 'smaWindow' => $priorityMonths,
                 'forecastMonths' => $priorityMonths,
+                'automaticWindow' => ! $request->filled('forecast_months'),
                 'forecastPeriods' => SmaForecaster::PERIOD_LABELS,
                 // Same rule as the purchase request routes (admin, procurement or inventory staff).
                 'canRequestPurchase' => EnsureRole::allows($request->user(), ['admin', 'staff_procurement', 'staff_inventory']),
@@ -753,6 +760,10 @@ class ReportController extends Controller
      */
     public function exportForecast(Request $request): StreamedResponse
     {
+        if ($request->has('period')) {
+            return app(ForecastController::class)->exportCsv($request);
+        }
+
         $team = $request->user()->currentTeam;
         abort_if(! $team, 403);
 

@@ -10,6 +10,7 @@ use App\Models\Inquiry;
 use App\Models\OrderFulfillment;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
+use App\Models\BiddingEvent;
 use App\Models\PurchaseRequest;
 use App\Models\Quotation;
 use App\Models\Sale;
@@ -64,6 +65,11 @@ class RecycleBinController extends Controller
             'class' => PurchaseRequest::class,
             'label' => 'Purchase Request',
             'badge' => 'Sky',
+        ],
+        'bidding_event' => [
+            'class' => BiddingEvent::class,
+            'label' => 'Bidding Event',
+            'badge' => 'Lime',
         ],
         'commercial_invoice' => [
             'class' => CommercialInvoice::class,
@@ -500,6 +506,18 @@ class RecycleBinController extends Controller
                 }
             }
 
+            // A bidding event comes back only if its purchase request is still waiting for an order and has no other live bidding.
+            if ($model instanceof BiddingEvent && $model->status !== BiddingEvent::CANCELLED) {
+                $pr = $model->purchaseRequest()->withTrashed()->first();
+                if (! $pr || $pr->trashed() || $pr->status !== PurchaseRequest::APPROVED || $pr->purchaseOrder()->withTrashed()->exists()) {
+                    throw new \RuntimeException('its purchase request is no longer waiting for an order.');
+                }
+                $other = BiddingEvent::where('purchase_request_id', $pr->id)->where('status', '!=', BiddingEvent::CANCELLED)->value('reference');
+                if ($other) {
+                    throw new \RuntimeException("the purchase request already has another bidding event ({$other}).");
+                }
+            }
+
             $model->restore();
 
             // If product, re-enable active flag
@@ -575,6 +593,7 @@ class RecycleBinController extends Controller
             'quotation' => (string) ($model->quotation_number ?? "Quotation #{$model->id}"),
             'purchase_order' => (string) ($model->po_number ?? "PO #{$model->id}"),
             'purchase_request' => (string) ($model->request_number ?? "PR #{$model->id}"),
+            'bidding_event' => (string) ($model->reference ?? "Bidding #{$model->id}"),
             'commercial_invoice' => (string) ($model->invoice_number ?? "Invoice #{$model->id}"),
             'delivery' => (string) ($model->delivery_number ?? "Delivery #{$model->id}"),
             'customer_delivery' => (string) ($model->fulfillment_number ?? "Customer delivery #{$model->id}"),
@@ -601,6 +620,7 @@ class RecycleBinController extends Controller
             'quotation' => $item->client_name ? "Client: {$item->client_name}" : 'Quotation document',
             'purchase_order' => $item->item_sku ? "Item: {$item->item_sku}" : 'Purchase order',
             'purchase_request' => $item->status ? "Status: {$item->status}" : 'Purchase request',
+            'bidding_event' => "Status: {$item->status}",
             'commercial_invoice' => 'Date: '.($item->invoice_date?->format('M d, Y') ?? 'N/A'),
             'delivery' => 'PO: '.($item->purchase_order_number ?: 'N/A'),
             'customer_delivery' => 'Recipient: '.($item->recipient_name ?: 'N/A'),
@@ -626,6 +646,7 @@ class RecycleBinController extends Controller
             'quotation' => $item->status instanceof \BackedEnum ? $item->status->label() : (string) $item->status,
             'purchase_order' => sprintf('%d %s', (int) $item->quantity, $item->unit_of_measure ?: 'units'),
             'purchase_request', 'commercial_invoice' => sprintf('Qty: %d', (int) $item->quantity),
+            'bidding_event' => 'Deadline: '.($item->submission_deadline?->format('M d, Y') ?? 'N/A'),
             'delivery' => sprintf('Qty: %d %s • %s', (int) $item->quantity, $item->unit ?: 'units', $item->delivery_date?->format('M d, Y') ?? 'N/A'),
             'customer_delivery' => ($item->status instanceof \BackedEnum ? $item->status->label() : (string) $item->status).' • '.($item->fulfillment_type === 'pickup' ? 'Pickup' : 'Delivery'),
             'inquiry' => $item->message ? Str::limit($item->message, 80) : 'Customer contact inquiry',

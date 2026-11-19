@@ -25,9 +25,11 @@ use App\Support\DateNormalizer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -44,7 +46,9 @@ class DeliveryController extends Controller
 
         $user = $request->user();
         $isAdmin = $user->isAdmin();
-        $isDeliveryStaff = ! $isAdmin && ($user->role === 'staff_deliveries' || in_array('deliveries', $user->assignedModules(), true));
+        // Drivers only (Deliveries without Inventory or Procurement). Staff who also have Inventory
+        // or Procurement keep the inbound tab and the full customer delivery list.
+        $isDeliveryStaff = $user->isDeliveryDriverOnly();
 
         // Active tab: delivery staff are restricted to outbound customer deliveries.
         $activeTab = $isDeliveryStaff ? 'outbound' : $request->input('tab', 'outbound');
@@ -142,15 +146,11 @@ class DeliveryController extends Controller
         // Available Delivery Staff list (for Admin assignment dropdown)
         $deliveryStaffList = [];
         if ($isAdmin) {
-            $deliveryStaffList = User::where('current_team_id', $team->id)
-                ->where('status', 'Active')
-                ->where(function ($q) {
-                    $q->where('role', 'staff_deliveries')
-                        ->orWhere('role', 'like', 'staff%')
-                        ->orWhereIn('role', ['admin', 'owner']);
-                })
-                ->orderBy('name')
-                ->get(['id', 'name', 'email', 'role']);
+            // Only people who can open the Deliveries module: assigning anyone else would leave
+            // the delivery with a handler who cannot see it.
+            $deliveryStaffList = $this->assignableStaff($team)
+                ->map(fn (User $u) => ['id' => $u->id, 'name' => $u->name, 'email' => $u->email, 'role' => $u->role, 'role_label' => $u->roleLabel()])
+                ->values();
         }
 
         // ---------------------------------------------------------
@@ -513,6 +513,19 @@ class DeliveryController extends Controller
         ]);
     }
 
+    /**
+     * Team members a delivery can be assigned to: active accounts that can open the Deliveries module.
+     *
+     * @return Collection<int, User>
+     */
+    private function assignableStaff(Team $team): Collection
+    {
+        return $team->members()->with('modulePermissions')->get()
+            ->filter(fn (User $u) => $u->canHandleDeliveries())
+            ->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)
+            ->values();
+    }
+
     /** Warehouse staff (and administrators) prepare releases and hand over pickups. */
     private function canPrepare(User $user): bool
     {
@@ -618,7 +631,14 @@ class DeliveryController extends Controller
             'staff_id' => ['required', 'integer', Rule::exists('users', 'id')],
         ]);
 
-        $assignedUser = User::findOrFail($validated['staff_id']);
+        // An active member of this team who can open the Deliveries module; nobody else.
+        $assignedUser = $this->assignableStaff($team)->firstWhere('id', (int) $validated['staff_id']);
+        if (! $assignedUser) {
+            throw ValidationException::withMessages([
+                'staff_id' => 'Choose an active staff member of this team who has the Deliveries, Inventory or Procurement module (or an administrator).',
+            ]);
+        }
+
         $fulfillment->handled_by_id = $assignedUser->id;
         $fulfillment->save();
 

@@ -23,7 +23,13 @@ class ProductListExtractor
 {
     public const CACHE_MINUTES = 30;
 
-    public function __construct(private FileReader $reader, private OcrEngine $ocr) {}
+    private FileReader $reader;
+
+    public function __construct(FileReader $reader, private OcrEngine $ocr)
+    {
+        // Only the public quotation request uses this class: it accepts the wider set of formats.
+        $this->reader = $reader->forQuotationRequests();
+    }
 
     /**
      * @param  array<string, int>|null  $mapping  columns chosen by the client: {description, quantity, unit?}
@@ -48,6 +54,10 @@ class ProductListExtractor
         if ($result['status'] === 'ok') {
             Cache::put(self::textCheckKey($hash), true, now()->addHours(2));
         }
+
+        // What the reading itself found worth saying (a scanned page that could not be read, an animated GIF, text read
+        // by OCR from a picture inside a document) comes first, so a reviewer sees it with the rows.
+        $result['notes'] = [...($content['notes'] ?? []), ...$result['notes']];
 
         return ['hash' => $hash, 'type' => $type, 'method' => $content['method'], 'ocr' => $ocr] + $result;
     }
@@ -95,7 +105,7 @@ class ProductListExtractor
         $isHeader = fn (array $cells, bool $words = false) => ProductListHeaders::isProductHeader($cells, $words);
         $empty = ['tables' => [], 'lines' => [], 'line_conf' => []];
 
-        if ($type === 'csv' || $type === 'xlsx' || $type === 'xls') {
+        if (in_array($type, ['csv', 'xlsx', 'xls', 'ods'], true)) {
             $read = $this->reader->read($path, $type);
             $tables = [];
             foreach ($read['tables'] ?? [['sheet' => null, 'rows' => $read['rows'] ?? []]] as $table) {
@@ -117,15 +127,23 @@ class ProductListExtractor
             return ['method' => $read['method']] + ['tables' => $tables] + $empty;
         }
 
+        if (in_array($type, ['txt', 'rtf', 'html', 'svg', 'docx', 'pptx', 'odt', 'odp', 'doc', 'ppt'], true)) {
+            return $this->readDocument($path, $type, $isHeader);
+        }
+
+        $notes = [];
         if ($type === 'image') {
-            $tsv = $this->ocr->imageToTsv($path);
+            // A picture in a format Tesseract cannot take (PBM/PGM/PPM, HEIC) is converted to PNG first.
+            $tsv = $this->reader->imageTsv($path);
             $this->assertWriting($tsv);
+            $notes = $this->reader->documents()->pictureNotes($path);
             $table = ['method' => 'ocr'] + WordTable::build([$tsv], $isHeader, true);
         } else {
             $table = $this->reader->readTable($path, 'pdf', $isHeader);
             if ($table !== null && $table['method'] === 'pdf-ocr') {
                 $this->assertWritingInRows($table['rows']);
             }
+            $notes = $table['notes'] ?? [];
         }
 
         if ($table === null) {
@@ -147,7 +165,7 @@ class ProductListExtractor
         if ($table['aligned']) {
             return ['method' => $table['method'], 'tables' => [[
                 'sheet' => null, 'rows' => $table['rows'], 'conf' => $table['conf'] ?? [], 'ref' => 'line', 'reliable' => ! $ocr,
-            ]], 'lines' => [], 'line_conf' => []];
+            ]], 'lines' => [], 'line_conf' => [], 'notes' => $notes];
         }
 
         // No header row: the text lines, with wide gaps kept as tabs.
@@ -161,7 +179,74 @@ class ProductListExtractor
             $lineConf[] = ($table['conf'][$i] ?? []) === [] ? 100.0 : (float) min($table['conf'][$i]);
         }
 
-        return ['method' => $table['method'], 'tables' => [], 'lines' => $lines, 'line_conf' => $lineConf];
+        return ['method' => $table['method'], 'tables' => [], 'lines' => $lines, 'line_conf' => $lineConf, 'notes' => $notes];
+    }
+
+    /**
+     * Text, Word, PowerPoint and OpenDocument files: read directly (never as pictures). Tables stay tables and text stays
+     * lines, in document order. Pictures inside the document (a scanned page pasted into Word, slides that are images)
+     * go through the same OCR as any picture, and what they give is marked as OCR with its confidence, so it is reviewed.
+     *
+     * @param  callable(array<int, string>, bool=): bool  $isHeader
+     */
+    private function readDocument(string $path, string $type, callable $isHeader): array
+    {
+        $read = $this->reader->read($path, $type);
+        $tables = [];
+        foreach ($read['tables'] ?? [] as $table) {
+            $tables[] = ['sheet' => $table['sheet'], 'rows' => $table['rows'], 'conf' => [], 'ref' => 'row', 'reliable' => true];
+        }
+        $lines = $read['lines'] ?? [];
+        $lineConf = array_fill(0, count($lines), 100.0);
+        $notes = $read['notes'] ?? [];
+
+        // Legacy .doc/.ppt were converted to a temporary file that is already gone: their pictures are not read.
+        $ocrUsed = false;
+        if (! in_array($type, ['doc', 'ppt'], true)) {
+            $failed = null;
+            $this->reader->documents()->eachEmbeddedImage($path, $type, function (string $image, string $label) use (&$tables, &$lines, &$lineConf, &$notes, &$ocrUsed, &$failed, $isHeader) {
+                try {
+                    $built = WordTable::build([$this->reader->imageTsv($image)], $isHeader, true);
+                } catch (ExtractionException $e) {
+                    $failed ??= $e->reason === 'ocr_unavailable'
+                        ? 'This document contains pictures, and text recognition (OCR) is not available on the server, so the pictures were NOT read.'
+                        : "A picture in this document ({$label}) could not be read.";
+
+                    return;
+                }
+                $rows = array_values(array_filter($built['rows'], fn ($r) => trim(implode('', $r)) !== ''));
+                if ($rows === []) {
+                    return;
+                }
+                $ocrUsed = true;
+                if ($built['aligned']) {
+                    $tables[] = ['sheet' => $label, 'rows' => $built['rows'], 'conf' => $built['conf'] ?? [], 'ref' => 'line', 'reliable' => false];
+                } else {
+                    foreach ($built['rows'] as $i => $row) {
+                        if (trim(implode('', $row)) !== '') {
+                            $lines[] = implode("\t", $row);
+                            $lineConf[] = ($built['conf'][$i] ?? []) === [] ? 100.0 : (float) min($built['conf'][$i]);
+                        }
+                    }
+                }
+            });
+            if ($failed !== null) {
+                $notes[] = $failed.' Please check the list.';
+            }
+            if ($ocrUsed) {
+                $notes[] = 'Some products were read from pictures in this document with text recognition (OCR). Please check them.';
+            }
+        }
+
+        if ($tables === [] && $lines === []) {
+            throw new ExtractionException('No readable text was found in this file.', 'no_text');
+        }
+
+        // Tables win over loose lines (as for spreadsheets). Text lines use the "text" source, whose confidence is "medium".
+        return [
+            'method' => $ocrUsed ? 'ocr' : ($tables !== [] ? $read['method'] : 'text'),
+            'tables' => $tables, 'lines' => $tables !== [] ? [] : $lines, 'line_conf' => $tables !== [] ? [] : $lineConf, 'notes' => $notes,
+        ];
     }
 
     /** OCR output of an image must show a written list, not a product photo. */
