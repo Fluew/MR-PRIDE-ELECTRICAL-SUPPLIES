@@ -2,6 +2,7 @@
 
 namespace App\Services\Inventory;
 
+use App\Support\CalculationCache;
 use App\Models\Product;
 use App\Models\ProductSupplier;
 use App\Services\Forecast\SmaForecaster;
@@ -29,6 +30,14 @@ class ProductPrioritizer
      * @return array<int, array> keyed by product id, highest complete score first
      */
     public function forTeam(int $teamId, ?CarbonInterface $now = null, ?int $forecastMonths = null): array
+    {
+        // "As of now" is cached until the team's records change (see CalculationCache); a fixed date is not.
+        return $now === null
+            ? CalculationCache::remember($teamId, 'product-priority', [$forecastMonths], fn () => $this->calculateForTeam($teamId, null, $forecastMonths))
+            : $this->calculateForTeam($teamId, $now, $forecastMonths);
+    }
+
+    private function calculateForTeam(int $teamId, ?CarbonInterface $now, ?int $forecastMonths): array
     {
         $now = Carbon::instance($now ?? now());
         $config = config('evaluation.product_priority');

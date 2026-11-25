@@ -76,14 +76,22 @@ class BiddingWorkflow
         });
     }
 
-    public function invite(BiddingEvent $event, User $user, int $supplierId): void
+    /**
+     * Invite one or several suppliers. All or nothing: if one cannot be invited, none are.
+     *
+     * @param  int|list<int>  $supplierIds
+     */
+    public function invite(BiddingEvent $event, User $user, int|array $supplierIds): void
     {
-        DB::transaction(function () use ($event, $user, $supplierId) {
+        $supplierIds = array_values(array_unique(array_map('intval', (array) $supplierIds)));
+        DB::transaction(function () use ($event, $user, $supplierIds) {
             $event = BiddingEvent::lockForUpdate()->findOrFail($event->id);
             if (! in_array($event->status, [BiddingEvent::DRAFT, BiddingEvent::OPEN], true)) {
                 throw new WorkflowException("{$event->reference} is {$event->status}; suppliers can no longer be invited.");
             }
-            $this->addInvitation($event, $supplierId, $user);
+            foreach ($supplierIds as $supplierId) {
+                $this->addInvitation($event, $supplierId, $user);
+            }
         });
     }
 

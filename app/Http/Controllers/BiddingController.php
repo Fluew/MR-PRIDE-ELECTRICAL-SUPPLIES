@@ -10,13 +10,19 @@ use App\Models\SupplierBid;
 use App\Models\Team;
 use App\Services\AuditLogger;
 use App\Services\Documents\DocumentPdf;
+use App\Services\MaterialList\ExtractionException;
 use App\Services\Procurement\BiddingWorkflow;
+use App\Services\Procurement\BidQuotationReader;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use Throwable;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -123,12 +129,21 @@ class BiddingController extends Controller
     public function invite(Request $request): RedirectResponse
     {
         $event = $this->event($request);
-        $data = $request->validate(['supplier_id' => ['required', 'integer']]);
+        // A checklist sends supplier_ids[]; a single supplier_id is still accepted.
+        $data = $request->validate([
+            'supplier_ids' => ['required_without:supplier_id', 'array', 'min:1', 'max:100'],
+            'supplier_ids.*' => ['integer', 'distinct'],
+            'supplier_id' => ['required_without:supplier_ids', 'integer'],
+        ], [
+            'supplier_ids.required_without' => 'Tick at least one supplier to invite.',
+            'supplier_ids.min' => 'Tick at least one supplier to invite.',
+        ]);
+        $ids = $data['supplier_ids'] ?? [(int) $data['supplier_id']];
 
-        return $this->runWorkflow(function () use ($event, $request, $data) {
-            $this->workflow->invite($event, $request->user(), (int) $data['supplier_id']);
+        return $this->runWorkflow(function () use ($event, $request, $ids) {
+            $this->workflow->invite($event, $request->user(), $ids);
 
-            return 'Supplier invited.';
+            return count($ids) === 1 ? 'Supplier invited.' : count($ids).' suppliers invited.';
         });
     }
 
@@ -187,6 +202,47 @@ class BiddingController extends Controller
 
             return "Quotation from {$bid->supplier->name} recorded.";
         });
+    }
+
+    /**
+     * Read a supplier's quotation for "Record quotation": a document (PDF, PNG, JPG; OCR for scans)
+     * or a CSV with the purchase order import columns. Returns the values to check; nothing is saved.
+     */
+    public function readQuotation(Request $request, BidQuotationReader $reader): JsonResponse
+    {
+        $event = $this->event($request);
+        if ($event->status !== BiddingEvent::OPEN) {
+            return response()->json(['success' => false, 'message' => 'Quotations can only be recorded while the bidding is open.'], 422);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'file' => ['required', 'file', 'max:'.BidQuotationReader::MAX_KB, 'extensions:pdf,png,jpg,jpeg,csv,txt'],
+        ], [
+            'file.required' => 'Choose the quotation document or CSV to read.',
+            'file.max' => 'The file is larger than 25 MB. Please upload a smaller file.',
+            'file.uploaded' => 'The file could not be uploaded. It may be larger than 25 MB.',
+            'file.extensions' => 'Quotations can be read from PDF, PNG, JPG or CSV files.',
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'message' => $validator->errors()->first()], 422);
+        }
+
+        $file = $request->file('file');
+        if (! app()->runningUnitTests()) {
+            @set_time_limit(300); // OCR of a scanned document can take a while
+        }
+
+        try {
+            $result = $reader->read($file->getRealPath() ?: $file->getPathname(), $file->getClientOriginalName(), $event);
+        } catch (ExtractionException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            Log::error('Bidding quotation could not be read: '.$e->getMessage(), ['exception' => $e]);
+
+            return response()->json(['success' => false, 'message' => 'The file could not be read. Please check it and try again.'], 500);
+        }
+
+        return response()->json(['success' => true, 'file_name' => mb_substr($file->getClientOriginalName(), 0, 200)] + $result);
     }
 
     public function reviseBid(Request $request): RedirectResponse
@@ -281,7 +337,7 @@ class BiddingController extends Controller
             'valid_until' => ['nullable', 'date_format:Y-m-d'],
             'quotation_reference' => ['nullable', 'string', 'max:100'],
             'notes' => ['nullable', 'string', 'max:2000'],
-            'document' => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png,doc,docx,xls,xlsx', 'max:10240'],
+            'document' => ['nullable', 'file', 'extensions:pdf,jpg,jpeg,png,doc,docx,xls,xlsx,csv,txt', 'max:25600'],
         ];
     }
 

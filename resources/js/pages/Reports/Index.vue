@@ -13,6 +13,7 @@ import ProductPriorityBreakdown, { type ProductPriority } from '@/components/eva
 import SupplierEvaluationBreakdown from '@/components/evaluation/SupplierEvaluationBreakdown.vue';
 import PurchaseRequestCreator, { type PrCandidate } from '@/components/procurement/PurchaseRequestCreator.vue';
 import { useCurrency } from '@/composables/useCurrency';
+import { continuousForecastLine } from '@/lib/forecastLine';
 import { isPrivacyHidden } from '@/composables/usePrivacyMode';
 import {
   FileText,
@@ -197,6 +198,13 @@ const props = defineProps<{
         salesTrend: {
             labels: string[];
             data: number[];
+            /** Months from this index on are not finished: the chart leaves them out. */
+            completeUntil?: number;
+        };
+        /** Completed weeks / years of the same revenue, for the chart's period switch. */
+        salesTrendByPeriod?: {
+            weekly: { labels: string[]; ranges: string[]; data: number[] };
+            annual: { labels: string[]; ranges: string[]; data: number[] };
         };
         quotationStatusDistribution: Record<string, number>;
         topSellingProducts: Array<{
@@ -219,6 +227,7 @@ const props = defineProps<{
         historical: number[];
         forecast: (number | null)[];
         year: number;
+        currentMonthIndex?: number | null;
         window: number;
         hasData: boolean;
         steps: { month: string; inputs: { month: string; units: number }[]; sum: number; window: number; forecast: number }[];
@@ -998,11 +1007,14 @@ const lowStockSeverityData = computed(() => ({
 }));
 
 // 5. Sales Revenue Trend Line Chart
+// Completed months only: the running month is partly over, so plotting it would show a false drop.
+const salesTrendCut = computed(() => props.quotationsSalesAnalytics.salesTrend.completeUntil ?? props.quotationsSalesAnalytics.salesTrend.labels.length);
+const salesTrendHiddenMonth = computed(() => props.quotationsSalesAnalytics.salesTrend.labels[salesTrendCut.value] ?? null);
 const salesRevenueTrendData = computed(() => ({
-    labels: props.quotationsSalesAnalytics.salesTrend.labels,
+    labels: props.quotationsSalesAnalytics.salesTrend.labels.slice(0, salesTrendCut.value),
     datasets: [{
         label: `Sales Revenue (${displayCurrency.value})`,
-        data: props.quotationsSalesAnalytics.salesTrend.data.map(v => toDisplayAmount(v)),
+        data: props.quotationsSalesAnalytics.salesTrend.data.slice(0, salesTrendCut.value).map(v => toDisplayAmount(v)),
         borderColor: '#10b981',
         backgroundColor: 'rgba(16, 185, 129, 0.1)',
         fill: true,
@@ -1011,6 +1023,32 @@ const salesRevenueTrendData = computed(() => ({
         pointRadius: 4,
     }],
 }));
+
+// Revenue Velocity: Weekly / Monthly / Annual switch (completed periods only, so no false drop at the end).
+type RevenuePeriod = 'weekly' | 'monthly' | 'annual';
+const REVENUE_PERIODS: { key: RevenuePeriod; label: string }[] = [
+    { key: 'weekly', label: 'Weekly' },
+    { key: 'monthly', label: 'Monthly' },
+    { key: 'annual', label: 'Annual' },
+];
+const revenuePeriod = ref<RevenuePeriod>('monthly');
+const revenueVelocityData = computed(() => {
+    const series = revenuePeriod.value === 'monthly' ? null : props.quotationsSalesAnalytics.salesTrendByPeriod?.[revenuePeriod.value];
+    if (!series) return salesRevenueTrendData.value;
+    return {
+        labels: series.labels,
+        datasets: [{ ...salesRevenueTrendData.value.datasets[0], data: series.data.map((v) => toDisplayAmount(v)) }],
+    };
+});
+const revenueVelocityNote = computed(() =>
+    revenuePeriod.value === 'weekly'
+        ? `Last 12 completed weeks (Monday to Sunday) of finished months.${salesTrendHiddenMonth.value ? ` Weeks of ${salesTrendHiddenMonth.value} are not plotted until the month is over.` : ''}`
+        : revenuePeriod.value === 'annual'
+          ? 'Last 6 completed years. This year is still in progress and is not plotted.'
+          : salesTrendHiddenMonth.value
+            ? `Completed months only. ${salesTrendHiddenMonth.value} is still in progress and is not plotted.`
+            : '',
+);
 
 // 6. Quotation Status Donut Chart
 const quotationStatusDonutData = computed(() => {
@@ -1038,18 +1076,63 @@ const topSellingBarData = computed(() => ({
 }));
 
 // 8. Forecast Line Chart (Historical vs SMA)
+// One unbroken line: recorded demand (solid) → dashed straight to the forecast. The running month
+// is only partly over, so it is a separate diamond off the line (no false drop); later months have
+// not happened and are not drawn. The tables keep the full figures.
+const forecastLine = computed(() => {
+    const fa = props.forecastAnalytics;
+    const cur = fa.currentMonthIndex ?? null;
+    const actual = fa.historical.map((v, i) => (cur !== null && i >= cur ? null : v));
+    const partial = fa.historical.map((v, i) => (i === cur ? v : null));
+    return continuousForecastLine(actual, partial, fa.forecast);
+});
+const hasForecastProjection = computed(() => forecastLine.value.forecast.some((v, i) => v !== null && forecastLine.value.actual[i] === null));
+
 const forecastChartData = computed(() => ({
     labels: props.forecastAnalytics.labels,
     datasets: [
         {
             label: 'Recorded Demand (Units)',
-            data: props.forecastAnalytics.historical,
+            data: forecastLine.value.actual,
             borderColor: '#10b981',
             backgroundColor: 'rgba(16, 185, 129, 0.1)',
             fill: true,
             tension: 0.35,
             pointRadius: 3,
         },
+        ...(hasForecastProjection.value
+            ? [{
+                key: 'projection',
+                label: 'Projected demand',
+                data: forecastLine.value.forecast,
+                borderColor: '#10b981',
+                borderDash: [6, 4],
+                backgroundColor: 'transparent',
+                tension: 0,
+                spanGaps: true,
+                // Its first point is the last full month, already on the solid line.
+                pointRadius: forecastLine.value.forecast.map((v, i) => (v !== null && forecastLine.value.actual[i] === null ? 5 : 0)),
+                pointBackgroundColor: '#10b981',
+                pointBorderColor: '#ffffff',
+                pointBorderWidth: 2,
+            }]
+            : []),
+        ...(forecastLine.value.partialIdx >= 0
+            ? [{
+                key: 'partial',
+                label: 'This month so far (in progress)',
+                data: forecastLine.value.partial,
+                showLine: false,
+                order: -1,
+                pointStyle: 'rectRot',
+                pointRadius: 6,
+                pointHoverRadius: 8,
+                pointBorderWidth: 2,
+                borderColor: '#10b981',
+                backgroundColor: '#ffffff',
+                pointBackgroundColor: '#ffffff',
+            }]
+            : []),
         {
             label: 'SMA-3 Forecast',
             data: props.forecastAnalytics.forecast,
@@ -1404,16 +1487,32 @@ const moneyHorizontalBarOptions = computed(() => ({
                     <div class="panel lg:col-span-2 p-6 flex flex-col">
                         <div class="flex justify-between items-start mb-4">
                             <div>
-                                <h3 class="text-base font-semibold text-gray-900">Monthly Revenue Velocity</h3>
-                                <p class="text-xs text-gray-400">Actual sales income aggregated per billing cycle</p>
+                                <h3 class="text-base font-semibold text-gray-900">{{ REVENUE_PERIODS.find((p) => p.key === revenuePeriod)?.label }} Revenue Velocity</h3>
+                                <p class="text-xs text-gray-400">Actual sales income per {{ revenuePeriod === 'weekly' ? 'week' : revenuePeriod === 'annual' ? 'year' : 'month' }}</p>
                             </div>
-                            <span class="text-xs font-semibold px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-full">
-                                Total: {{ formatCurrency(metrics.totalRevenue) }}
-                            </span>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <div class="inline-flex rounded-lg bg-gray-100 p-0.5" role="tablist" aria-label="Revenue period">
+                                    <button
+                                        v-for="p in REVENUE_PERIODS"
+                                        :key="p.key"
+                                        type="button"
+                                        role="tab"
+                                        :aria-selected="revenuePeriod === p.key"
+                                        :data-test="`revenue-period-${p.key}`"
+                                        :class="revenuePeriod === p.key ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-600 hover:text-gray-900'"
+                                        class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
+                                        @click="revenuePeriod = p.key"
+                                    >{{ p.label }}</button>
+                                </div>
+                                <span class="text-xs font-semibold px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-full">
+                                    Total: {{ formatCurrency(metrics.totalRevenue) }}
+                                </span>
+                            </div>
                         </div>
                         <div class="h-64">
-                            <Line :data="salesRevenueTrendData" :options="moneyLineOptions" />
+                            <Line :data="revenueVelocityData" :options="moneyLineOptions" />
                         </div>
+                        <p v-if="revenueVelocityNote" class="mt-2 text-[11px] text-gray-400">{{ revenueVelocityNote }}</p>
                     </div>
 
                     <!-- Stock Health Donut -->
@@ -1767,6 +1866,7 @@ const moneyHorizontalBarOptions = computed(() => ({
                         <div class="h-56">
                             <Line :data="salesRevenueTrendData" :options="moneyLineOptions" />
                         </div>
+                        <p v-if="salesTrendHiddenMonth" class="mt-2 text-[11px] text-gray-400">Completed months only. {{ salesTrendHiddenMonth }} is still in progress and is not plotted.</p>
                     </div>
 
                     <div class="panel p-6">

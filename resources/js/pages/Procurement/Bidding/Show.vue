@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
-import { ArrowLeft, FileText, Paperclip, Plus, Trash2 } from '@lucide/vue';
+import { ArrowLeft, FileText, Paperclip, PencilLine, Plus, ScanText, Trash2 } from '@lucide/vue';
 import { computed, ref } from 'vue';
+import BidQuotationImport, { type QuotationValues } from '@/components/procurement/BidQuotationImport.vue';
 import SpecularButton from '@/components/ui/SpecularButton.vue';
 import { useCanDelete } from '@/composables/useCanDelete';
 import { useCurrency } from '@/composables/useCurrency';
@@ -72,10 +73,28 @@ const today = () => nowLocal().slice(0, 10);
 const act = (path: string, data: Record<string, unknown> = {}) => router.post(`${base.value}/${path}`, data as any, { preserveScroll: true });
 
 // ── Invite supplier ──
-const inviteId = ref<number | ''>('');
+// ── Invite suppliers (checklist: tick several, invite them together) ──
+const inviteIds = ref<number[]>([]);
+const inviting = ref(false);
+// The checklist is hidden behind an "Invite suppliers" button and closes after inviting.
+const showInvite = ref(false);
+const closeInvite = () => {
+    showInvite.value = false;
+    inviteIds.value = [];
+};
+const allTicked = computed(() => props.availableSuppliers.length > 0 && inviteIds.value.length === props.availableSuppliers.length);
+const toggleAll = () => (inviteIds.value = allTicked.value ? [] : props.availableSuppliers.map((s) => s.id));
 const invite = () => {
-    if (inviteId.value === '') return;
-    router.post(`${base.value}/suppliers`, { supplier_id: inviteId.value }, { preserveScroll: true, onSuccess: () => (inviteId.value = '') });
+    if (!inviteIds.value.length) return;
+    inviting.value = true;
+    router.post(`${base.value}/suppliers`, { supplier_ids: inviteIds.value }, {
+        preserveScroll: true,
+        // runWorkflow redirects back on errors too: close only when nothing failed.
+        onSuccess: (p) => {
+            if (!Object.keys((p.props as any).errors ?? {}).length) closeInvite();
+        },
+        onFinish: () => (inviting.value = false),
+    });
 };
 const uninvite = (id: number) => router.delete(`${base.value}/suppliers/${id}`, { preserveScroll: true });
 
@@ -97,6 +116,9 @@ const startRecord = () => {
 };
 const closeBidForm = () => {
     showBidForm.value = false;
+    importFile.value = null;
+    readFrom.value = null;
+    entryMode.value = 'manual';
     editing.value = null;
     form.defaults(blank()).reset();
     form.clearErrors();
@@ -118,7 +140,38 @@ const submitBid = () => {
         onSuccess: closeBidForm,
     });
 };
-const onFile = (e: Event) => (form.document = (e.target as HTMLInputElement).files?.[0] ?? null);
+
+// ── Read the quotation from a document (OCR) or CSV, same logic as the purchase order import ──
+const importFile = ref<File | null>(null);
+const importInput = ref<HTMLInputElement | null>(null);
+const readFrom = ref<string | null>(null);
+// How the quotation is recorded: typed in by hand, or uploaded and read (OCR / CSV).
+const entryMode = ref<'manual' | 'upload'>('manual');
+const setEntryMode = (mode: 'manual' | 'upload') => {
+    entryMode.value = mode;
+    if (mode === 'manual') {
+        // Manual entry has no file: a read in progress and the attached file are dropped; typed values stay.
+        importFile.value = null;
+        readFrom.value = null;
+        form.document = null;
+    }
+};
+const onImportFile = (e: Event) => {
+    const input = e.target as HTMLInputElement;
+    importFile.value = input.files?.[0] ?? null;
+    input.value = ''; // the same file can be chosen again
+};
+const applyRead = (v: QuotationValues) => {
+    if (v.supplier_id !== '') form.supplier_id = v.supplier_id;
+    form.unit_price = v.unit_price;
+    form.quantity = v.quantity;
+    if (v.quotation_date) form.quotation_date = v.quotation_date;
+    if (v.quotation_reference) form.quotation_reference = v.quotation_reference;
+    form.notes = form.notes ? `${form.notes}\n${v.notes}` : v.notes;
+    form.document = importFile.value; // the file read is attached as the quotation
+    readFrom.value = importFile.value?.name ?? null;
+    importFile.value = null;
+};
 
 // ── Cancel / award ──
 const cancelling = ref(false);
@@ -222,12 +275,42 @@ const topErrors = computed(() => Object.values((page.props as any).errors ?? {})
                     </div>
                 </li>
             </ul>
-            <div v-if="isDraft || isOpen" class="mt-3 flex gap-2">
-                <select v-model="inviteId" aria-label="Invite a supplier" class="field-control w-72 max-w-full">
-                    <option value="">Invite another supplier…</option>
-                    <option v-for="s in availableSuppliers" :key="s.id" :value="s.id">{{ s.name }}</option>
-                </select>
-                <button type="button" class="secondary-button" :disabled="inviteId === ''" @click="invite">Invite</button>
+            <div v-if="(isDraft || isOpen) && !showInvite" class="mt-3 border-t border-gray-100 pt-3">
+                <button
+                    type="button"
+                    class="secondary-button"
+                    data-test="invite-toggle"
+                    aria-controls="invite-checklist"
+                    :aria-expanded="false"
+                    :disabled="!availableSuppliers.length"
+                    :title="availableSuppliers.length ? '' : 'Every active supplier is already invited'"
+                    @click="showInvite = true"
+                >
+                    <Plus class="size-4" aria-hidden="true" /> Invite suppliers
+                </button>
+            </div>
+            <div v-if="(isDraft || isOpen) && showInvite" id="invite-checklist" role="group" aria-labelledby="invite-more" class="mt-3 border-t border-gray-100 pt-3" data-test="invite-checklist">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <p id="invite-more" class="text-xs font-semibold text-gray-700">Invite suppliers <span class="font-normal text-gray-500">(tick all you want, then invite)</span></p>
+                    <div class="flex items-center gap-3">
+                        <button v-if="availableSuppliers.length > 1" type="button" class="text-xs text-[#4b5320] underline" @click="toggleAll">{{ allTicked ? 'Clear all' : 'Select all' }}</button>
+                        <button type="button" class="text-lg leading-none text-gray-400 hover:text-gray-600" aria-label="Close the supplier list" :aria-expanded="true" aria-controls="invite-checklist" @click="closeInvite">&times;</button>
+                    </div>
+                </div>
+                <div v-if="availableSuppliers.length" class="mt-2 grid max-h-56 grid-cols-1 gap-1 overflow-y-auto rounded-lg border border-gray-200 p-2 sm:grid-cols-2">
+                    <label v-for="s in availableSuppliers" :key="s.id" class="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-gray-50">
+                        <input v-model="inviteIds" type="checkbox" :value="s.id" />
+                        <span class="min-w-0 truncate">{{ s.name }} <span v-if="s.email" class="text-xs text-gray-400">{{ s.email }}</span></span>
+                    </label>
+                </div>
+                <p v-else class="mt-2 text-xs text-gray-500">Every active supplier is already invited.</p>
+                <p v-if="(page.props as any).errors?.supplier_ids" class="mt-1 text-xs text-rose-600" role="alert">{{ (page.props as any).errors.supplier_ids }}</p>
+                <div v-if="availableSuppliers.length" class="mt-2 flex justify-end gap-2">
+                    <button type="button" class="secondary-button" @click="closeInvite">Cancel</button>
+                    <button type="button" class="brand-button" data-test="invite-selected" :disabled="!inviteIds.length || inviting" @click="invite">
+                        {{ inviting ? 'Inviting…' : inviteIds.length ? `Invite ${inviteIds.length} supplier${inviteIds.length === 1 ? '' : 's'}` : 'Invite' }}
+                    </button>
+                </div>
             </div>
         </section>
 
@@ -329,7 +412,55 @@ const topErrors = computed(() => Object.values((page.props as any).errors ?? {})
                 </div>
                 <button type="button" class="text-2xl leading-none text-gray-400 hover:text-gray-600" aria-label="Close" @click="closeBidForm">&times;</button>
             </div>
-            <form class="mt-4 grid gap-3 sm:grid-cols-2" @submit.prevent="submitBid">
+            <!-- How to record: type it in, or upload the supplier's file and have it read -->
+            <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2" role="radiogroup" aria-label="How to record the quotation">
+                <button
+                    v-for="m in ([
+                        { key: 'manual', title: 'Enter manually', text: 'Type in the values from the supplier\'s email or paper.' },
+                        { key: 'upload', title: 'Upload file', text: 'PDF, PNG or JPG read automatically (OCR), or a CSV.' },
+                    ] as const)"
+                    :key="m.key"
+                    type="button"
+                    role="radio"
+                    :aria-checked="entryMode === m.key"
+                    :data-test="`bid-mode-${m.key}`"
+                    class="flex items-start gap-2 rounded-xl border p-3 text-left text-xs transition"
+                    :class="entryMode === m.key ? 'border-[#4b5320] bg-[#4b5320]/5 ring-1 ring-[#4b5320]' : 'border-gray-200 hover:border-gray-300'"
+                    @click="setEntryMode(m.key)"
+                >
+                    <component :is="m.key === 'manual' ? PencilLine : ScanText" class="mt-0.5 size-4 shrink-0 text-[#4b5320]" aria-hidden="true" />
+                    <span><strong class="block text-sm text-gray-900">{{ m.title }}</strong><span class="text-gray-600">{{ m.text }}</span></span>
+                </button>
+            </div>
+
+            <!-- Upload: the file is read, checked here, then fills the form below -->
+            <div v-if="entryMode === 'upload' && importFile" class="mt-4">
+                <BidQuotationImport
+                    :file="importFile"
+                    :read-url="`${base}/read-quotation`"
+                    :suppliers="editing ? [{ supplier_id: editing.supplier.id, name: editing.supplier.name }] : awaiting"
+                    :requested="{ item: event.item, sku: event.sku, quantity: event.quantity, unit: event.unit }"
+                    @apply="applyRead"
+                    @cancel="importFile = null"
+                />
+            </div>
+            <div v-else-if="entryMode === 'upload'" class="mt-4 rounded-xl border border-dashed border-gray-300 bg-gray-50/60 p-4 text-xs text-gray-600">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <p class="min-w-0 flex-1">
+                        <template v-if="readFrom"><span class="text-emerald-700">Filled from <strong>{{ readFrom }}</strong> (attached).</span> Check the values below and enter the lead time, then save. Or upload a different file.</template>
+                        <template v-else>
+                            Upload the supplier's quotation: a PDF, PNG or JPG is read automatically (OCR for scans and photos), or a CSV with ORDER DATE, PURCHASE ORDER NO.,
+                            QTY ORDERED, SUPPLIER, ITEM/SKU Number, Description, UNIT COST, U/M, EXTENDED COST. You check the values before anything is saved.
+                        </template>
+                    </p>
+                    <button type="button" class="brand-button min-h-8 px-3 py-1.5 text-xs" data-test="bid-read-document" @click="importInput?.click()">
+                        <ScanText class="size-3.5" aria-hidden="true" /> {{ readFrom ? 'Upload another file' : 'Choose file' }}
+                    </button>
+                    <input ref="importInput" type="file" accept=".pdf,.png,.jpg,.jpeg,.csv,.txt" class="hidden" @change="onImportFile" />
+                </div>
+            </div>
+            <!-- The form: always for manual entry; after a file was read for upload (to check, add the lead time, save) -->
+            <form v-show="entryMode === 'manual' || (!importFile && readFrom)" class="mt-4 grid gap-3 sm:grid-cols-2" @submit.prevent="submitBid">
                 <div v-if="!editing" class="sm:col-span-2">
                     <label class="field-label" for="b-supplier">Supplier</label>
                     <select id="b-supplier" v-model="form.supplier_id" required class="field-control w-full">
@@ -345,10 +476,10 @@ const topErrors = computed(() => Object.values((page.props as any).errors ?? {})
                 <div><label class="field-label" for="b-valid">Valid until</label><input id="b-valid" v-model="form.valid_until" type="date" :min="form.quotation_date" class="field-control w-full" /></div>
                 <div class="sm:col-span-2"><label class="field-label" for="b-recv">Date and time received</label><input id="b-recv" v-model="form.received_at" type="datetime-local" required class="field-control w-full" /></div>
                 <div class="sm:col-span-2"><label class="field-label" for="b-notes">Notes (terms, conditions)</label><textarea id="b-notes" v-model="form.notes" rows="2" class="field-control w-full"></textarea></div>
-                <div class="sm:col-span-2">
-                    <label class="field-label" for="b-doc">Attach the quotation (PDF, image, Word or Excel, up to 10 MB)</label>
-                    <input id="b-doc" type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" class="field-control w-full" @change="onFile" />
-                </div>
+                <!-- Upload mode only: the file that was read is attached as the quotation document -->
+                <p v-if="entryMode === 'upload' && form.document" class="flex items-center gap-1.5 text-xs text-gray-600 sm:col-span-2">
+                    <Paperclip class="size-3.5" aria-hidden="true" /> Attached quotation: <strong class="text-gray-800">{{ form.document.name }}</strong>
+                </p>
                 <div v-if="editing" class="sm:col-span-2"><label class="field-label" for="b-reason">Reason for the revision (required)</label><input id="b-reason" v-model="form.reason" type="text" maxlength="500" required class="field-control w-full" /></div>
                 <div class="flex items-end justify-end gap-2 sm:col-span-2">
                     <ul v-if="errorList.length" class="mr-auto text-xs text-rose-600" role="alert"><li v-for="(e, i) in errorList" :key="i">{{ e }}</li></ul>

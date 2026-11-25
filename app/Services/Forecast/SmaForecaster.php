@@ -2,6 +2,7 @@
 
 namespace App\Services\Forecast;
 
+use App\Support\CalculationCache;
 use App\Enums\ForecastPeriod;
 use App\Enums\SalesOrderStatus;
 use App\Models\Product;
@@ -26,6 +27,13 @@ class SmaForecaster
 {
     /** Aggregate in SQL; memory use is bounded by products × periods, not sale items. */
     public function periodProducts(int $teamId, array $productIds, ForecastPeriod $period, int $historyPeriods = 60, int $horizon = 3, int|string $window = 'auto', ?CarbonInterface $asOf = null): array
+    {
+        // Cached until the team's records change (see CalculationCache).
+        return CalculationCache::remember($teamId, 'period-products', [$productIds, $period->value, $historyPeriods, $horizon, $window, $asOf ? Carbon::instance($asOf)->toDateTimeString() : null],
+            fn () => $this->calculatePeriodProducts($teamId, $productIds, $period, $historyPeriods, $horizon, $window, $asOf));
+    }
+
+    private function calculatePeriodProducts(int $teamId, array $productIds, ForecastPeriod $period, int $historyPeriods, int $horizon, int|string $window, ?CarbonInterface $asOf): array
     {
         if ($historyPeriods < 3 || $historyPeriods > 240 || $horizon < 1 || $horizon > 24 || ($window !== 'auto' && ! in_array((int) $window, self::WINDOWS, true))) {
             throw new \InvalidArgumentException('Invalid forecast configuration.');
@@ -312,6 +320,13 @@ class SmaForecaster
      * @return array{labels: list<string>, months: list<string>, historical: list<int>, forecast: list<int|null>, hasData: bool, steps: list<array>, sourceRecords: list<array>, sourceRecordCount: int}
      */
     public function series(int $teamId, CarbonInterface $from, CarbonInterface $to, int $window, string $category = 'All', ?int $productId = null): array
+    {
+        // Cached until the team's records change (see CalculationCache).
+        return CalculationCache::remember($teamId, 'sma-series', [Carbon::instance($from)->toDateTimeString(), Carbon::instance($to)->toDateTimeString(), $window, $category, $productId],
+            fn () => $this->calculateSeries($teamId, $from, $to, $window, $category, $productId));
+    }
+
+    private function calculateSeries(int $teamId, CarbonInterface $from, CarbonInterface $to, int $window, string $category, ?int $productId): array
     {
         $window = self::window($window);
         $from = Carbon::instance($from)->copy();

@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Support\CalculationCache;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -30,6 +31,8 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
         $this->useLoopbackForDevSsr();
+        // Cached calculations are recalculated as soon as a team's business records change.
+        CalculationCache::register();
 
         // Server-side render only the public marketing pages (search engines, fast first paint).
         // Staff pages are behind login, so SSR would only add a render round-trip to each load.

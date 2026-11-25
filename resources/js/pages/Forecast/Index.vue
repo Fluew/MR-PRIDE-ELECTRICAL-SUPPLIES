@@ -5,6 +5,8 @@ import { index as forecastIndex } from '@/actions/App/Http/Controllers/ForecastC
 import { exportCsv as forecastExport } from '@/actions/App/Http/Controllers/ForecastController';
 import type { PeriodPlanning, ForecastMetrics } from '@/types/forecast';
 import { LineChart as Line } from '@/lib/lazyCharts';
+import { continuousForecastLine } from '@/lib/forecastLine';
+import TopPerformersPanel, { type TopPerformers } from '@/components/forecast/TopPerformersPanel.vue';
 import StatusBadge from '@/components/ui/StatusBadge.vue';
 import { useCurrency } from '@/composables/useCurrency';
 import { BarChart3, Download, Minus, Search, TrendingDown, TrendingUp, X } from '@lucide/vue';
@@ -107,7 +109,7 @@ interface MetricSeriesPoint {
     month: string;
     ym: string;
     is_forecast: boolean;
-    status: 'complete' | 'insufficient_history' | 'forecast';
+    status: 'complete' | 'in_progress' | 'insufficient_history' | 'forecast';
     actual: number | null;
     sma_decimal: number | null;
     sma_rounded: number | null;
@@ -200,6 +202,7 @@ const { formatMoney } = useCurrency();
 
 const props = defineProps<{
     periodPlanning?: PeriodPlanning;
+    topPerformers?: TopPerformers;
     fromDate: string;
     toDate: string;
     datePreset?: DatePreset;
@@ -610,30 +613,37 @@ const chartData = computed(() => {
             series.points[idx]?.is_forecast ? null : val,
         );
 
+        // One unbroken line: actual (solid) → forecast (dashed), joined at the last completed month and
+        // passing straight over the month in progress. That month is a separate diamond at its value so
+        // far (partly over, so it is kept off the line to avoid a false drop) and is never used by the model.
+        const line = continuousForecastLine(series.actual, series.partial_actual ?? [], series.next_month_projection);
+
         return {
             labels: series.labels,
             datasets: [
                 {
+                    key: 'actual',
                     label: `Actual completed periods (${activeMetricMeta.value.label})`,
                     backgroundColor: 'rgba(75, 83, 32, 0.04)',
                     borderColor: '#4b5320',
                     fill: true,
-                    data: series.actual,
+                    data: line.actual,
                     tension: 0.3,
                     pointRadius: 2,
                     pointHoverRadius: 6,
                     pointBackgroundColor: '#4b5320',
                     spanGaps: false,
                 },
-                ...(series.partial_actual?.some((v) => v !== null && v !== undefined)
+                ...(line.partialIdx >= 0
                     ? [{
+                        key: 'partial',
                         label: `In progress, not in model (${activeMetricMeta.value.label})`,
                         borderColor: '#4b5320',
                         backgroundColor: '#ffffff',
-                        borderDash: [2, 4],
                         fill: false,
-                        data: series.partial_actual.map((v) => v ?? null),
+                        data: line.partial,
                         showLine: false,
+                        order: -1, // drawn above the lines it sits on
                         pointStyle: 'rectRot',
                         pointRadius: 6,
                         pointHoverRadius: 8,
@@ -643,6 +653,7 @@ const chartData = computed(() => {
                     }]
                     : []),
                 {
+                    key: 'sma',
                     label: props.periodPlanning ? `Holdout SMA ${chartWindow.value} (exact)` : `${smaLabel.value} Trend Line (Decimal)`,
                     backgroundColor: 'rgba(248, 184, 3, 0.06)',
                     borderColor: '#b58a16',
@@ -656,18 +667,18 @@ const chartData = computed(() => {
                     spanGaps: false,
                 },
                 {
+                    key: 'forecast',
                     label: `Future forecast (${targetMonthLabel.value} · ${unit})`,
-                    backgroundColor: 'rgba(87, 93, 80, 0.08)',
-                    borderColor: '#575d50',
-                    borderDash: [3, 3],
+                    backgroundColor: 'rgba(75, 83, 32, 0.08)',
+                    borderColor: '#4b5320',
+                    borderDash: [6, 4],
                     fill: false,
-                    data: series.next_month_projection,
+                    data: line.forecast,
                     tension: 0,
-                    pointRadius: series.next_month_projection.map((v, idx) =>
-                        idx === series.next_month_projection.length - 1 && v !== null ? 7 : 0,
-                    ),
-                    pointHoverRadius: 9,
-                    pointBackgroundColor: '#575d50',
+                    // Dots only on the forecast months; the line starts at the last completed month.
+                    pointRadius: line.forecast.map((v, idx) => (v !== null && series.points[idx]?.is_forecast ? 6 : 0)),
+                    pointHoverRadius: line.forecast.map((v, idx) => (v !== null && series.points[idx]?.is_forecast ? 8 : 0)),
+                    pointBackgroundColor: '#4b5320',
                     pointBorderColor: '#ffffff',
                     pointBorderWidth: 2,
                     spanGaps: true,
@@ -746,20 +757,26 @@ const chartOptions = computed(() => {
                         if (!pt) return items[0].label;
                         return pt.is_forecast
                             ? `${pt.month} — SMA-${chartWindow.value} Forecast`
-                            : `${pt.month} — Completed Historical Period`;
+                            : pt.status === 'in_progress'
+                              ? `${pt.month} — Month in progress`
+                              : `${pt.month} — Completed Historical Period`;
                     },
                     label: (ctx: any) => {
                         const idx = ctx.dataIndex;
                         const pt = series?.points?.[idx];
                         if (ctx.parsed.y === null || ctx.parsed.y === undefined) return '';
+                        const key = ctx.dataset.key;
 
-                        if (ctx.datasetIndex === 0) {
+                        if (key === 'partial') {
+                            return `  So far (in progress, not in model): ${formatWhole(ctx.parsed.y)} ${unit}`;
+                        }
+                        if (key === 'actual') {
                             return `  Actual Historical: ${formatWhole(ctx.parsed.y)} ${unit}${ctx.parsed.y === 0 ? ' (Zero-sales month)' : ''}`;
                         }
-                        if (ctx.datasetIndex === 1 && pt && !pt.is_forecast) {
+                        if (key === 'sma' && pt && !pt.is_forecast) {
                             return `  SMA-${chartWindow.value}: ${formatDecimal(pt.sma_decimal)} ${unit} (≈ ${formatWhole(pt.sma_rounded)} rounded)`;
                         }
-                        if (ctx.datasetIndex === 2 && pt && pt.is_forecast) {
+                        if (key === 'forecast' && pt && pt.is_forecast) {
                             return `  Predicted ${activeMetricMeta.value.label}: ${formatDecimal(pt.sma_decimal)} ${unit} (≈ ${formatWhole(pt.sma_rounded)} whole ${unit})`;
                         }
                         return '';
@@ -1088,6 +1105,9 @@ const goToProcurement = (product?: { name: string; sku: string }) => {
                 <Line :data="chartData" :options="chartOptions" />
             </div>
         </section>
+
+        <!-- Top 5 suppliers and products: own Weekly / Monthly / Annual filter, independent of the SMA settings -->
+        <TopPerformersPanel v-if="topPerformers" :data="topPerformers" />
 
         <!-- Product forecasts -->
         <section class="panel overflow-hidden" aria-labelledby="product-forecast-title">

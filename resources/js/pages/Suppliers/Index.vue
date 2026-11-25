@@ -7,6 +7,7 @@ import SpecularButton from '@/components/ui/SpecularButton.vue';
 import StatusBadge from '@/components/ui/StatusBadge.vue';
 import { type Evaluation } from '@/components/evaluation/ScoreBreakdown.vue';
 import SupplierEvaluationBreakdown from '@/components/evaluation/SupplierEvaluationBreakdown.vue';
+import SupplierProfile, { type ProfileSection, type SupplierProfileData } from '@/components/evaluation/SupplierProfile.vue';
 import { Search, Plus, Phone, Mail, Building2, CheckCircle2, Check, Trash2 } from '@lucide/vue';
 
 interface Supplier {
@@ -18,6 +19,15 @@ interface Supplier {
     address?: string | null;
     status: 'Active' | 'Inactive';
     evaluation: SupplierEvaluation | null;
+    flags: SupplierFlag[];
+}
+
+type FlagKey = 'best_overall' | 'fastest_delivery' | 'fast_delivery' | 'slow_delivery' | 'lowest_price' | 'highest_price' | 'best_quality';
+interface SupplierFlag {
+    key: FlagKey;
+    label: string;
+    /** How the flag was earned, from the records (shown on hover). */
+    reason: string;
 }
 
 interface SupplierEvaluation extends Evaluation {
@@ -63,7 +73,9 @@ const props = defineProps<{
         search?: string;
         status?: string;
         sort?: string;
+        flag?: string | null;
     };
+    flagOptions: { key: FlagKey; label: string; count: number }[];
     weights: { delivery: number; price: number; quality: number };
     periodMonths: number;
     products: { id: number; name: string; sku: string; unit: string | null }[];
@@ -78,6 +90,7 @@ const teamSlug = computed(() => (page.props as any).currentTeam?.slug || (page.p
 const search = ref(props.filters?.search || '');
 const selectedStatus = ref(props.filters?.status || 'All');
 const selectedSort = ref(props.filters?.sort || 'score_desc');
+const selectedFlag = ref(props.filters?.flag || '');
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
 const triggerNavigation = () => {
@@ -88,6 +101,7 @@ const triggerNavigation = () => {
             search: search.value || undefined,
             status: selectedStatus.value !== 'All' ? selectedStatus.value : undefined,
             sort: selectedSort.value !== 'score_desc' ? selectedSort.value : undefined,
+            flag: selectedFlag.value || undefined,
         },
         { preserveState: true, preserveScroll: true, replace: true }
     );
@@ -107,8 +121,22 @@ watch(() => props.filters, (newFilters) => {
         if (newFilters.search !== undefined) search.value = newFilters.search || '';
         if (newFilters.status !== undefined) selectedStatus.value = newFilters.status || 'All';
         if (newFilters.sort !== undefined) selectedSort.value = newFilters.sort || 'score_desc';
+        if (newFilters.flag !== undefined) selectedFlag.value = newFilters.flag || '';
     }
 }, { deep: true });
+
+// Performance flags: calculated from the evaluation (deliveries, purchase prices, inspections), same look as Bidding.
+const FLAG_STYLE: Record<FlagKey, string> = {
+    best_overall: 'bg-[#4b5320]/10 text-[#4b5320]',
+    fastest_delivery: 'bg-blue-100 text-blue-800',
+    fast_delivery: 'bg-sky-100 text-sky-800',
+    slow_delivery: 'bg-rose-100 text-rose-800',
+    lowest_price: 'bg-emerald-100 text-emerald-800',
+    highest_price: 'bg-amber-100 text-amber-800',
+    best_quality: 'bg-violet-100 text-violet-800',
+};
+/** "Fastest" already says "fast": the plain Fast badge is not repeated beside it (the filter still finds it). */
+const visibleFlags = (s: Supplier) => s.flags.filter((f) => !(f.key === 'fast_delivery' && s.flags.some((g) => g.key === 'fastest_delivery')));
 
 // Modals
 const showAddModal = ref(false);
@@ -260,7 +288,20 @@ const confirmDelete = () => {
 
 // ---- Supplier Evaluation (calculated by the backend from transactions; read-only here)
 const evalSupplier = ref<Supplier | null>(null);
-const evalTab = ref<'evaluation' | 'quotes' | 'availability'>('evaluation');
+// Supplier Profile tabs (calculated by the backend), then the existing quotes and availability records.
+type EvalTab = ProfileSection | 'quotes' | 'availability';
+const EVAL_TABS: { k: EvalTab; l: string }[] = [
+    { k: 'overview', l: 'Overview' },
+    { k: 'products', l: 'Products' },
+    { k: 'delivery', l: 'Delivery' },
+    { k: 'price', l: 'Price' },
+    { k: 'quality', l: 'Quality' },
+    { k: 'quotes', l: 'Quotes' },
+    { k: 'availability', l: 'Availability' },
+];
+const isProfileTab = (t: EvalTab): t is ProfileSection => !['quotes', 'availability'].includes(t);
+const evalTab = ref<EvalTab>('overview');
+const profile = ref<SupplierProfileData | null>(null);
 const quotes = ref<QuoteRecord[]>([]);
 const availability = ref<AvailabilityRecord[]>([]);
 const recordsLoading = ref(false);
@@ -289,6 +330,7 @@ const loadRecords = async () => {
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
+        profile.value = data.profile;
         quotes.value = data.quotes;
         availability.value = data.availability;
     } catch {
@@ -298,9 +340,10 @@ const loadRecords = async () => {
     }
 };
 
-const openEvaluation = (supplier: Supplier, tab: 'evaluation' | 'quotes' | 'availability' = 'evaluation') => {
+const openEvaluation = (supplier: Supplier, tab: EvalTab = 'overview') => {
     evalSupplier.value = supplier;
     evalTab.value = tab;
+    profile.value = null;
     quotes.value = [];
     availability.value = [];
     void loadRecords();
@@ -416,6 +459,14 @@ const money = (amount: number, currency: string) =>
                     <option value="name_desc">Name (Z-A)</option>
                 </select>
             </div>
+
+            <div class="w-56">
+                <select v-model="selectedFlag" aria-label="Filter by performance flag" class="field-control w-full font-medium cursor-pointer" data-test="flag-filter" @change="applyFilter">
+                    <option value="">All performance flags</option>
+                    <option v-for="f in flagOptions" :key="f.key" :value="f.key" :disabled="!f.count && selectedFlag !== f.key">{{ f.label }} ({{ f.count }})</option>
+                </select>
+            </div>
+            <button v-if="selectedFlag" type="button" class="text-xs text-[#4b5320] underline" @click="selectedFlag = ''; applyFilter()">Clear flag</button>
         </div>
 
         <!-- Suppliers Table -->
@@ -423,6 +474,7 @@ const money = (amount: number, currency: string) =>
             <p class="mb-3 text-xs text-gray-500">
                 AHP score = Delivery Performance × {{ Math.round(weights.delivery * 100) }}% + Price Competitiveness × {{ Math.round(weights.price * 100) }}% + Product Quality × {{ Math.round(weights.quality * 100) }}%,
                 from the last {{ periodMonths }} months of inbound deliveries, inspections and purchase order costs. The ranking helps you choose; the system never selects or orders from a supplier.
+                Performance flags compare suppliers on the same records (delivery speed = average days from order to delivery); hover a flag to see how it was earned.
             </p>
             <div class="overflow-x-auto">
                 <table class="w-full text-left border-collapse">
@@ -440,7 +492,8 @@ const money = (amount: number, currency: string) =>
                     <tbody class="text-sm">
                         <tr v-if="!suppliers.data.length">
                             <td colspan="7" class="py-8 text-center text-gray-500">
-                                No suppliers found. Click "+ Add Supplier" to register your first supplier.
+                                <template v-if="selectedFlag">No supplier currently has the "{{ flagOptions.find((f) => f.key === selectedFlag)?.label }}" flag with these filters.</template>
+                                <template v-else>No suppliers found. Click "+ Add Supplier" to register your first supplier.</template>
                             </td>
                         </tr>
                         <tr v-for="supplier in suppliers.data" :key="supplier.id" class="border-b border-gray-100 hover:bg-gray-50 transition-colors group">
@@ -448,9 +501,15 @@ const money = (amount: number, currency: string) =>
                                 <span v-if="supplier.evaluation?.rank" class="font-semibold text-gray-900">#{{ supplier.evaluation.rank }}</span>
                                 <span v-else class="text-gray-400">—</span>
                             </td>
-                            <td class="py-4 text-gray-900 font-semibold flex items-center gap-2">
-                                <Building2 class="w-4 h-4 text-gray-400" />
-                                {{ supplier.name }}
+                            <td class="py-4 pr-3">
+                                <div class="flex items-center gap-2 font-semibold text-gray-900">
+                                    <Building2 class="w-4 h-4 shrink-0 text-gray-400" />
+                                    {{ supplier.name }}
+                                </div>
+                                <!-- Performance flags (Bidding badge style); hover for how each was earned -->
+                                <div v-if="supplier.flags.length" class="mt-1.5 flex flex-wrap gap-1 pl-6 text-xs" data-test="supplier-flags">
+                                    <span v-for="f in visibleFlags(supplier)" :key="f.key" :class="FLAG_STYLE[f.key]" class="cursor-help rounded px-1.5 py-0.5 font-medium" :title="f.reason">{{ f.label }}</span>
+                                </div>
                             </td>
                             <td class="py-4 text-gray-600">{{ supplier.contact_person || '—' }}</td>
                             <td class="py-4 text-gray-600 text-xs space-y-0.5">
@@ -715,44 +774,56 @@ const money = (amount: number, currency: string) =>
     </div>
 
     <!-- Supplier Evaluation -->
-    <div v-if="evalSupplier" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" @click.self="evalSupplier = null">
-        <div class="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden panel" role="dialog" aria-modal="true" aria-labelledby="eval-title">
-            <div class="flex items-start justify-between gap-3 border-b border-gray-100 px-6 py-4">
-                <div>
-                    <h3 id="eval-title" class="text-lg font-semibold text-gray-900">{{ evalSupplier.name }}</h3>
-                    <p v-if="evalSupplier.evaluation" class="text-xs text-gray-500">
-                        Evaluation period {{ evalSupplier.evaluation.period.from }} to {{ evalSupplier.evaluation.period.to }} ({{ periodMonths }} months)
-                    </p>
-                </div>
-                <div class="flex items-start gap-3">
-                    <div v-if="evalSupplier.evaluation" class="text-right">
-                        <div class="text-xl font-semibold text-gray-900">{{ evalSupplier.evaluation.complete ? `${scoreLabel(evalSupplier.evaluation)} / 100` : 'Insufficient data' }}</div>
-                        <div class="text-xs text-gray-500">
-                            {{ evalSupplier.evaluation.classification ?? 'Not classified' }}<template v-if="evalSupplier.evaluation.rank"> · rank {{ evalSupplier.evaluation.rank }} of {{ evalSupplier.evaluation.ranked_of }}</template>
-                        </div>
+    <div v-if="evalSupplier" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-6" @click.self="evalSupplier = null">
+        <div class="flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden panel" role="dialog" aria-modal="true" aria-labelledby="eval-title">
+            <!-- Header: who, badges, score -->
+            <div class="flex flex-wrap items-start justify-between gap-4 border-b border-gray-100 px-6 py-5 sm:px-8">
+                <div class="min-w-0">
+                    <h3 id="eval-title" class="text-xl font-semibold text-gray-900">{{ evalSupplier.name }}</h3>
+                    <div v-if="evalSupplier.flags.length" class="mt-2 flex flex-wrap gap-1.5 text-xs">
+                        <span v-for="f in visibleFlags(evalSupplier)" :key="f.key" :class="FLAG_STYLE[f.key]" class="rounded px-2 py-0.5 font-medium" :title="f.reason">{{ f.label }}</span>
                     </div>
-                    <button type="button" class="text-xl text-gray-400 hover:text-gray-600" aria-label="Close" @click="evalSupplier = null">&times;</button>
+                    <p v-if="evalSupplier.evaluation" class="mt-2 text-xs text-gray-400">Based on the last {{ periodMonths }} months ({{ evalSupplier.evaluation.period.from }} to {{ evalSupplier.evaluation.period.to }})</p>
+                </div>
+                <div class="flex items-start gap-4">
+                    <div v-if="evalSupplier.evaluation" class="rounded-xl bg-gray-50 px-5 py-3 text-right">
+                        <template v-if="evalSupplier.evaluation.complete">
+                            <div class="text-3xl font-semibold text-gray-900">{{ scoreLabel(evalSupplier.evaluation) }}<span class="text-base font-normal text-gray-400"> / 100</span></div>
+                            <div class="mt-0.5 text-sm text-gray-600">{{ evalSupplier.evaluation.classification }}<template v-if="evalSupplier.evaluation.rank"> · Rank {{ evalSupplier.evaluation.rank }} of {{ evalSupplier.evaluation.ranked_of }}</template></div>
+                        </template>
+                        <template v-else>
+                            <div class="text-lg font-semibold text-amber-700">Insufficient Data</div>
+                            <div class="text-xs text-gray-500">Not enough records for a score yet</div>
+                        </template>
+                    </div>
+                    <button type="button" class="text-2xl leading-none text-gray-400 hover:text-gray-600" aria-label="Close" @click="evalSupplier = null">&times;</button>
                 </div>
             </div>
 
-            <div class="flex gap-1 overflow-x-auto border-b border-gray-100 px-4 text-sm sm:px-6" role="tablist">
-                <button v-for="t in [{ k: 'evaluation', l: 'Evaluation' }, { k: 'quotes', l: 'Price quotes' }, { k: 'availability', l: 'Product availability' }]" :key="t.k"
-                        type="button" role="tab" :aria-selected="evalTab === t.k"
-                        :class="evalTab === t.k ? 'border-[#4b5320] font-semibold text-[#4b5320]' : 'border-transparent text-gray-500'"
-                        class="shrink-0 border-b-2 px-3 py-2 whitespace-nowrap" @click="evalTab = t.k as any">{{ t.l }}</button>
+            <div class="flex gap-1 overflow-x-auto border-b border-gray-100 px-4 sm:px-8" role="tablist">
+                <button v-for="t in EVAL_TABS" :key="t.k"
+                        type="button" role="tab" :aria-selected="evalTab === t.k" :data-test="`profile-tab-${t.k}`"
+                        :class="evalTab === t.k ? 'border-[#4b5320] font-semibold text-[#4b5320]' : 'border-transparent text-gray-500 hover:text-gray-800'"
+                        class="shrink-0 border-b-2 px-4 py-3 text-sm whitespace-nowrap" @click="evalTab = t.k">{{ t.l }}</button>
             </div>
 
-            <div class="overflow-y-auto px-6 py-4">
-                <!-- Evaluation -->
-                <template v-if="evalTab === 'evaluation' && evalSupplier.evaluation">
-                    <SupplierEvaluationBreakdown :evaluation="evalSupplier.evaluation" :weights="weights" />
-                    <p class="mt-3 text-xs text-gray-500">
-                        Scores cannot be entered or edited. Record purchase orders with a promised date (Procurement), inspect inbound deliveries (Deliveries), and record quotes here; an administrator verifies quotes.
-                    </p>
-                </template>
+            <div class="flex-1 overflow-y-auto px-6 py-6 sm:px-8">
+                <p v-if="recordsLoading" class="text-sm text-gray-500">Loading the supplier profile…</p>
+                <p v-if="recordsError" class="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{{ recordsError }}</p>
 
-                <p v-if="evalTab !== 'evaluation' && recordsLoading" class="text-sm text-gray-500">Loading records…</p>
-                <p v-if="evalTab !== 'evaluation' && recordsError" class="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{{ recordsError }}</p>
+                <!-- Supplier Profile: overview, products, delivery, price, quality -->
+                <template v-if="isProfileTab(evalTab) && profile">
+                    <SupplierProfile :profile="profile" :section="evalTab" />
+                    <template v-if="evalTab === 'overview' && evalSupplier.evaluation">
+                        <details class="mt-4 rounded-xl border border-gray-200 px-4 py-3">
+                            <summary class="cursor-pointer text-sm font-medium text-gray-800">Show the full calculation details</summary>
+                            <div class="mt-3"><SupplierEvaluationBreakdown :evaluation="evalSupplier.evaluation" :weights="weights" /></div>
+                        </details>
+                        <p class="mt-3 text-xs text-gray-500">
+                            Scores cannot be entered or edited. They update by themselves from purchase orders (Procurement), inspected inbound deliveries (Deliveries), biddings and verified quotes.
+                        </p>
+                    </template>
+                </template>
 
                 <!-- Price quotes -->
                 <template v-if="evalTab === 'quotes'">

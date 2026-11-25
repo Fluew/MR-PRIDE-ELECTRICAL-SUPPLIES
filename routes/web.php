@@ -297,6 +297,7 @@ Route::prefix('{current_team}')
             Route::post('procurement/bidding/{biddingEvent}/close', [BiddingController::class, 'close'])->whereNumber('biddingEvent')->name('procurement.bidding.close');
             Route::post('procurement/bidding/{biddingEvent}/cancel', [BiddingController::class, 'cancel'])->whereNumber('biddingEvent')->name('procurement.bidding.cancel');
             Route::post('procurement/bidding/{biddingEvent}/bids', [BiddingController::class, 'recordBid'])->whereNumber('biddingEvent')->middleware('throttle:60,1')->name('procurement.bidding.bids.store');
+            Route::post('procurement/bidding/{biddingEvent}/read-quotation', [BiddingController::class, 'readQuotation'])->whereNumber('biddingEvent')->middleware('throttle:20,1')->name('procurement.bidding.readQuotation');
             Route::post('procurement/bidding/{biddingEvent}/bids/{bid}', [BiddingController::class, 'reviseBid'])->whereNumber(['biddingEvent', 'bid'])->middleware('throttle:60,1')->name('procurement.bidding.bids.revise');
             Route::get('procurement/bidding/{biddingEvent}/bids/{bid}/document', [BiddingController::class, 'document'])->whereNumber(['biddingEvent', 'bid'])->name('procurement.bidding.bids.document');
             Route::get('procurement/bidding/{biddingEvent}/rfq', [BiddingController::class, 'rfq'])->whereNumber('biddingEvent')->name('procurement.bidding.rfq');

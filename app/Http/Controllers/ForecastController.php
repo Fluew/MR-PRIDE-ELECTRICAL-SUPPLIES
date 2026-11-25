@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\ForecastPeriod;
 use App\Models\Product;
 use App\Services\Forecast\SmaForecaster;
+use App\Services\Forecast\TopPerformers;
 use App\Services\Inventory\ProductPrioritizer;
 use App\Support\Csv;
 use App\Support\DateNormalizer;
@@ -23,6 +24,12 @@ class ForecastController extends Controller
      */
     public function index(Request $request): Response
     {
+        // Changing the Top 5 period reloads only that panel: the SMA forecast is not recalculated.
+        if ($request->header('X-Inertia-Partial-Component') === 'Forecast/Index'
+            && $request->header('X-Inertia-Partial-Data') === 'topPerformers') {
+            return Inertia::render('Forecast/Index', ['topPerformers' => fn () => $this->topPerformers($request)]);
+        }
+
         if ($this->usesPeriods($request)) {
             return $this->periodPage($request);
         }
@@ -226,7 +233,24 @@ class ForecastController extends Controller
             'suggestedRestocks' => $suggestedRestocks,
             'minDate' => $minDate->format('Y-m-d'),
             'maxDate' => $today->format('Y-m-d'),
+            'topPerformers' => fn () => $this->topPerformers($request),
         ]);
+    }
+
+    /**
+     * Top 5 suppliers and products for the Weekly / Monthly / Annual filter (top_period) and how many
+     * periods back (top_offset, 0 = the current period to date). Independent of the SMA settings.
+     */
+    private function topPerformers(Request $request): array
+    {
+        $team = $request->user()->currentTeam;
+        abort_if(! $team, 403, 'No active team selected.');
+        $data = $request->validate([
+            'top_period' => ['sometimes', 'string', Rule::in(['weekly', 'monthly', 'annual'])],
+            'top_offset' => ['sometimes', 'integer', 'min:0', 'max:1200'],
+        ]);
+
+        return app(TopPerformers::class)->for($team->id, ForecastPeriod::from($data['top_period'] ?? 'monthly'), (int) ($data['top_offset'] ?? 0));
     }
 
     /**
@@ -364,6 +388,7 @@ class ForecastController extends Controller
                 'training_end' => $period->start(now())->subDay()->toDateString(),
                 'forecast_start' => $period->advance($period->start(now()))->toDateString(),
             ],
+            'topPerformers' => fn () => $this->topPerformers($request),
         ]);
     }
 

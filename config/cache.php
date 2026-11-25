@@ -17,6 +17,9 @@ return [
 
     'default' => env('CACHE_STORE', 'database'),
 
+    // Store for cached calculations (App\Support\CalculationCache): files keep large results out of the database.
+    'calculations' => env('CALCULATION_CACHE_STORE', 'file'),
+
     /*
     |--------------------------------------------------------------------------
     | Cache Stores

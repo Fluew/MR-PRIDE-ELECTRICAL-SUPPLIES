@@ -2,6 +2,7 @@
 
 namespace App\Services\Suppliers;
 
+use App\Support\CalculationCache;
 use App\Models\BiddingEvent;
 use App\Models\Delivery;
 use App\Models\Supplier;
@@ -31,7 +32,27 @@ class SupplierEvaluator
     public function forTeam(int $teamId, ?CarbonInterface $now = null): array
     {
         $now = Carbon::instance($now ?? now());
-        $periodStart = $now->copy()->subMonths((int) config('evaluation.supplier.period_months'))->startOfDay();
+
+        return $this->forRange($teamId, $now->copy()->subMonths((int) config('evaluation.supplier.period_months'))->startOfDay(), $now);
+    }
+
+    /**
+     * The same evaluation over any date range (e.g. one week, month or year), from the records
+     * dated in that range only. Ranks are within the range.
+     *
+     * @return array<int, array> keyed by supplier id
+     */
+    public function forRange(int $teamId, CarbonInterface $from, CarbonInterface $to): array
+    {
+        // Cached until the team's records change (see CalculationCache); records are dated by day.
+        return CalculationCache::remember($teamId, 'supplier-evaluation', [Carbon::instance($from)->toDateString(), Carbon::instance($to)->toDateString()],
+            fn () => $this->calculateRange($teamId, $from, $to));
+    }
+
+    private function calculateRange(int $teamId, CarbonInterface $from, CarbonInterface $to): array
+    {
+        $periodStart = Carbon::instance($from)->copy()->startOfDay();
+        $now = Carbon::instance($to)->copy();
 
         $suppliers = Supplier::where('team_id', $teamId)->orderBy('name')->get(['id', 'name', 'status']);
         $deliveries = $this->deliveries($teamId, $periodStart, $now);
@@ -132,10 +153,18 @@ class SupplierEvaluator
             $poRows[] = ['po_number' => $rows->first()->po_number, 'ordered' => $poQty, 'accepted' => $acc];
         }
 
+        // Lead time: days from the order being sent (its order date when not recorded) to the delivery.
+        // Informational (delivery-speed flags); it is not part of the score.
+        $leads = $deliveries->filter(fn ($d) => $d->purchase_order_id && $d->po_start)
+            ->map(fn ($d) => (int) $d->po_start->copy()->startOfDay()->diffInDays($d->delivery_date->copy()->startOfDay(), false))
+            ->filter(fn ($days) => $days >= 0);
+
         $base = [
             'key' => 'delivery', 'label' => 'Inbound Delivery Performance', 'weight' => $weight,
             'source' => 'Inbound deliveries against the promised date of their purchase order (the lead time quoted in the awarded bid, from the day the order was sent), and inspection results',
             'inputs' => [
+                'average_lead_days' => $leads->isEmpty() ? null : round($leads->avg(), 1),
+                'lead_time_deliveries' => $leads->count(),
                 'completed_deliveries' => $timed->count(),
                 'on_time_deliveries' => $onTime->count(),
                 'ordered_quantity' => $ordered,
@@ -277,7 +306,7 @@ class SupplierEvaluator
      * Inbound deliveries in the period (not cancelled or archived), with their purchase order.
      * A delivery number recorded twice for the same purchase order counts once.
      */
-    private function deliveries(int $teamId, Carbon $from, Carbon $to): Collection
+    public function deliveries(int $teamId, Carbon $from, Carbon $to): Collection
     {
         return Delivery::query()
             ->leftJoin('purchase_orders', function ($j) {
@@ -296,6 +325,12 @@ class SupplierEvaluator
                 'purchase_orders.supplier_id as po_supplier_id',
                 'purchase_orders.sent_at as po_sent_at',
                 'purchase_orders.po_date as po_date',
+                // For the supplier profile (which product each delivery was for, at what cost); not used by the scores.
+                'purchase_orders.product_id as po_product_id',
+                'purchase_orders.unit_cost as po_unit_cost',
+                'purchase_orders.unit_of_measure as po_unit',
+                'purchase_orders.item_sku as po_sku',
+                'purchase_orders.description as po_description',
             ])
             ->each(function ($d) use ($to) {
                 $d->inspection_valid = $d->inspection_result !== null && $d->inspected_on !== null

@@ -9,6 +9,7 @@ import { index as inventoryRoute } from '@/routes/inventory';
 import type { DashboardInvitation, Team } from '@/types';
 // Chart.js loads on demand (shared with Reports and Forecast).
 import { LineChart } from '@/lib/lazyCharts';
+import { continuousForecastLine } from '@/lib/forecastLine';
 
 
 const chartOptions = shallowRef({
@@ -17,7 +18,13 @@ const chartOptions = shallowRef({
     animation: { duration: 400 },
     plugins: {
         legend: { position: 'bottom' as const, align: 'start' as const, labels: { color: '#62665b', usePointStyle: true, boxWidth: 8, boxHeight: 8, padding: 20, font: { size: 11 } } },
-        tooltip: { backgroundColor: '#303624', padding: 12, cornerRadius: 10 },
+        tooltip: {
+            backgroundColor: '#303624',
+            padding: 12,
+            cornerRadius: 10,
+            // The projection starts at the last full month only to join the lines: no repeated row there.
+            filter: (item: any) => !(item.dataset.key === 'projection' && item.chart.data.datasets[0]?.data?.[item.dataIndex] != null),
+        },
     },
     scales: {
         x: { border: { display: false }, ticks: { color: '#717568', maxRotation: 0, maxTicksLimit: 8 }, grid: { display: false } },
@@ -60,6 +67,14 @@ const props = defineProps<{
     isFirstLogin?: boolean;
 }>();
 
+// The solid demand line continues as a dashed line from the last full month straight to this
+// month's forecast. This month so far is a separate diamond, kept off the line: it is only partly
+// over, so joining it would show a false drop.
+const demandLine = computed(() =>
+    continuousForecastLine(props.forecastSeries?.historical ?? [], props.forecastSeries?.partial ?? [], props.forecastSeries?.forecast ?? []),
+);
+const hasProjection = computed(() => demandLine.value.forecast.some((v, i) => v !== null && demandLine.value.actual[i] === null));
+
 const chartData = computed(() => ({
     labels: props.forecastSeries?.labels ?? ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
     datasets: [
@@ -67,12 +82,31 @@ const chartData = computed(() => ({
             label: 'Historical Demand (Units)',
             backgroundColor: '#4b5320',
             borderColor: '#4b5320',
-            data: props.forecastSeries?.historical ?? [],
+            data: demandLine.value.actual,
             tension: 0.3,
             borderWidth: 2,
             pointRadius: 2,
             pointHoverRadius: 5,
         },
+        ...(hasProjection.value
+            ? [{
+                key: 'projection',
+                label: 'Projected demand (dashed)',
+                backgroundColor: '#4b5320',
+                borderColor: '#4b5320',
+                borderDash: [6, 4],
+                data: demandLine.value.forecast,
+                tension: 0,
+                borderWidth: 2,
+                spanGaps: true,
+                // Its first point is the last full month, already shown by the solid line.
+                pointRadius: demandLine.value.forecast.map((v, i) => (v !== null && demandLine.value.actual[i] === null ? 5 : 0)),
+                pointHoverRadius: demandLine.value.forecast.map((v, i) => (v !== null && demandLine.value.actual[i] === null ? 7 : 0)),
+                pointBackgroundColor: '#4b5320',
+                pointBorderColor: '#ffffff',
+                pointBorderWidth: 2,
+            }]
+            : []),
         {
             label: `Forecast (SMA-${props.forecastSeries?.window ?? 3})`,
             backgroundColor: '#b58a16',
@@ -91,6 +125,7 @@ const chartData = computed(() => ({
                 borderColor: '#4b5320',
                 data: props.forecastSeries.partial,
                 showLine: false,
+                order: -1, // drawn above the line it sits on
                 pointStyle: 'rectRot',
                 pointRadius: 6,
                 pointHoverRadius: 8,

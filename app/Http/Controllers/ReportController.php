@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\ForecastPeriod;
 use App\Enums\QuotationStatus;
 use App\Enums\SalesOrderStatus;
 use App\Http\Middleware\EnsureRole;
@@ -278,8 +279,12 @@ class ReportController extends Controller
 
         $salesTrendLabels = [];
         $salesTrendData = [];
-        foreach ($trendPeriods as $tp) {
+        $salesTrendCompleteUntil = count($trendPeriods); // index of the first month not finished yet
+        foreach ($trendPeriods as $i => $tp) {
             $ym = $tp->format('Y-m');
+            if ($ym >= $today->format('Y-m') && $salesTrendCompleteUntil === count($trendPeriods)) {
+                $salesTrendCompleteUntil = $i;
+            }
             $salesTrendLabels[] = $tp->format('M Y');
             $salesTrendData[] = (float) ($salesMovements[$ym]->monthly_rev ?? 0.0);
         }
@@ -292,14 +297,13 @@ class ReportController extends Controller
             ->toArray();
 
         // Top Selling Products from SaleItem
-        $topSellingItems = SaleItem::whereHas('sale', function ($q) use ($team, $fromDate, $toDate) {
-            $q->where('team_id', $team->id)->whereIn('status', SalesOrderStatus::countedInSales());
-            if ($fromDate) {
-                $q->where('sale_date', '>=', $fromDate)->where('sale_date', '<=', $toDate);
-            }
-        })
-            ->selectRaw('product_name, sku, SUM(quantity) as total_qty, SUM(subtotal) as total_amount')
-            ->groupBy('product_name', 'sku')
+        // A join (not whereHas): same rows, without a correlated subquery per sale line.
+        $topSellingItems = SaleItem::join('sales', 'sales.id', '=', 'sale_items.sale_id')
+            ->where('sales.team_id', $team->id)->whereNull('sales.deleted_at')
+            ->whereIn('sales.status', SalesOrderStatus::countedInSales())
+            ->when($fromDate, fn ($q) => $q->where('sales.sale_date', '>=', $fromDate)->where('sales.sale_date', '<=', $toDate))
+            ->selectRaw('sale_items.product_name, sale_items.sku, SUM(sale_items.quantity) as total_qty, SUM(sale_items.subtotal) as total_amount')
+            ->groupBy('sale_items.product_name', 'sale_items.sku')
             ->orderByDesc('total_qty')
             ->limit(7)
             ->get()
@@ -499,6 +503,14 @@ class ReportController extends Controller
                 'salesTrend' => [
                     'labels' => $salesTrendLabels,
                     'data' => $salesTrendData,
+                    // Index of the month still in progress (or a later one), if shown: the chart stops before it so a
+                    // partial month never looks like a drop. Tables and exports keep the full figures.
+                    'completeUntil' => $salesTrendCompleteUntil,
+                ],
+                // Weekly / Annual views of the same revenue (completed periods only), for the chart's period switch.
+                'salesTrendByPeriod' => [
+                    'weekly' => $this->revenueTrend($team->id, ForecastPeriod::Weekly, $toDate, 12),
+                    'annual' => $this->revenueTrend($team->id, ForecastPeriod::Annual, $toDate, 6),
                 ],
                 'quotationStatusDistribution' => $quotationStatusCounts,
                 'topSellingProducts' => $topSellingItems,
@@ -517,6 +529,9 @@ class ReportController extends Controller
                 'historical' => $historicalDemand,
                 'forecast' => $smaForecast,
                 'year' => $curYear,
+                // Chart only: the running month (shown on its own, not on the line) and later months
+                // (not happened yet) are kept off the demand line. Null for a past year.
+                'currentMonthIndex' => $curYear === (int) $today->year ? $today->month - 1 : null,
                 'window' => 3,
                 'hasData' => $yearSeries['hasData'],
                 'steps' => $yearSeries['steps'],
@@ -1104,5 +1119,46 @@ class ReportController extends Controller
             $callback($file);
             fclose($file);
         }, 200, $headers);
+    }
+
+    /**
+     * Sales revenue per week or year for the last $count completed periods up to $end (the report's
+     * end date). The period still running is left out, so a partial week or year never looks like a
+     * drop. Same sales as the monthly trend: confirmed orders, by sale date, grand total.
+     *
+     * @return array{labels: list<string>, ranges: list<string>, data: list<float>}
+     */
+    private function revenueTrend(int $teamId, ForecastPeriod $period, Carbon $end, int $count): array
+    {
+        // Weeks stop with the last finished month, like the monthly view: no week of a month still running.
+        if ($period === ForecastPeriod::Weekly) {
+            $end = $end->copy()->min(today()->startOfMonth()->subDay()->endOfDay());
+        }
+        // The last completed period ends before the current one starts (and no later than $end).
+        $lastStart = $period->start($end);
+        if ($period->advance($lastStart)->subDay()->endOfDay()->gt($end) || $lastStart->gte($period->start(today()))) {
+            $lastStart = $period->advance($lastStart, -1);
+        }
+        $starts = array_map(fn ($i) => $period->advance($lastStart, -$i), range($count - 1, 0));
+
+        $bucket = $period->sql('sale_date', Sale::query()->getConnection()->getDriverName());
+        $revenue = Sale::where('team_id', $teamId)
+            ->whereIn('status', SalesOrderStatus::countedInSales())
+            ->where('sale_date', '>=', $starts[0]->toDateString())
+            ->where('sale_date', '<', $period->advance($lastStart)->toDateString())
+            ->selectRaw("$bucket as period_start, SUM(grand_total) as revenue")
+            ->groupByRaw($bucket)
+            ->pluck('revenue', 'period_start')
+            ->mapWithKeys(fn ($v, $k) => [substr((string) $k, 0, 10) => (float) $v]);
+
+        return [
+            'labels' => array_map(fn (Carbon $s) => match ($period) {
+                ForecastPeriod::Weekly => $s->format('d M'),
+                ForecastPeriod::Annual => $s->format('Y'),
+                default => $s->format('M Y'),
+            }, $starts),
+            'ranges' => array_map(fn (Carbon $s) => $period->label($s), $starts),
+            'data' => array_map(fn (Carbon $s) => round($revenue[$s->toDateString()] ?? 0.0, 2), $starts),
+        ];
     }
 }

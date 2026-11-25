@@ -492,3 +492,19 @@ it('scores quality from the inbound inspection and keeps a promised date staff c
     $quality = collect(app(\App\Services\Suppliers\SupplierEvaluator::class)->forTeam($this->team->id)[$this->suppliers[0]->id]['criteria'])->firstWhere('key', 'quality');
     expect($quality['inputs'])->toMatchArray(['accepted' => 90, 'rejected' => 10])->and($quality['score'])->toEqual(90.0);
 });
+
+it('invites several suppliers at once from the checklist, all or nothing', function () {
+    $more = collect(['Delta Electric', 'Echo Supply'])->map(fn ($n) => Supplier::create(['team_id' => $this->team->id, 'name' => $n, 'status' => 'Active']));
+    $event = biddingEvent($this, 1, false);
+
+    as_($this, 'buyer')->post("/bid-team/procurement/bidding/{$event->id}/suppliers", ['supplier_ids' => [$this->suppliers[1]->id, $more[0]->id, $more[1]->id]])
+        ->assertSessionHasNoErrors()->assertSessionHas('success', '3 suppliers invited.');
+    expect($event->invitations()->count())->toBe(4);
+
+    // One already invited: nothing from this batch is added.
+    as_($this, 'buyer')->post("/bid-team/procurement/bidding/{$event->id}/suppliers", ['supplier_ids' => [$this->suppliers[2]->id, $more[0]->id]])
+        ->assertSessionHasErrors('supplier_ids');
+    expect($event->invitations()->count())->toBe(4);
+
+    as_($this, 'buyer')->post("/bid-team/procurement/bidding/{$event->id}/suppliers", ['supplier_ids' => []])->assertSessionHasErrors('supplier_ids');
+});

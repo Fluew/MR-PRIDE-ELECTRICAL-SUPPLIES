@@ -8,6 +8,8 @@ use App\Models\Supplier;
 use App\Models\SupplierQuote;
 use App\Services\AuditLogger;
 use App\Services\Suppliers\SupplierEvaluator;
+use App\Services\Suppliers\SupplierFlags;
+use App\Services\Suppliers\SupplierProfile;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -46,9 +48,20 @@ class SupplierController extends Controller
         }
 
         $evaluations = $evaluator->forTeam($team->id);
+        // Performance flags compare every evaluated supplier of the team (not just the ones listed),
+        // and are recalculated with the evaluation on every visit.
+        $flags = app(SupplierFlags::class)->fromEvaluations($evaluations);
+        $flag = in_array($request->input('flag'), array_keys(SupplierFlags::FLAGS), true) ? $request->input('flag') : null;
+
         $all = $query->orderBy('name', $sort === 'name_desc' ? 'desc' : 'asc')
             ->get(['id', 'name', 'contact_person', 'phone', 'email', 'address', 'status'])
-            ->each(fn ($s) => $s->setAttribute('evaluation', $evaluations[$s->id] ?? null));
+            ->each(function ($s) use ($evaluations, $flags) {
+                $s->setAttribute('evaluation', $evaluations[$s->id] ?? null);
+                $s->setAttribute('flags', $flags[$s->id] ?? []);
+            });
+        if ($flag) {
+            $all = $all->filter(fn ($s) => collect($s->flags)->contains('key', $flag))->values();
+        }
 
         if (! in_array($sort, ['name_asc', 'name_desc'], true)) {
             // Complete scores first (highest first), then incomplete ones by name.
@@ -75,7 +88,13 @@ class SupplierController extends Controller
                 'search' => $search,
                 'status' => $status,
                 'sort' => $sort,
+                'flag' => $flag,
             ],
+            // Filter options with how many suppliers currently hold each flag.
+            'flagOptions' => collect(SupplierFlags::FLAGS)->map(fn ($label, $key) => [
+                'key' => $key, 'label' => $label,
+                'count' => collect($flags)->filter(fn ($set) => collect($set)->contains('key', $key))->count(),
+            ])->values(),
         ]);
     }
 
@@ -181,6 +200,8 @@ class SupplierController extends Controller
         $person = fn ($u) => $u ? ['id' => $u->id, 'name' => $u->name] : null;
 
         return response()->json([
+            // Products, delivery, price, quality and ranking explained, from the current evaluation.
+            'profile' => app(SupplierProfile::class)->for($supplier, app(SupplierEvaluator::class)->forTeam($supplier->team_id)),
             'quotes' => SupplierQuote::where('supplier_id', $supplier->id)->with(['product:id,name,sku', 'verifiedBy:id,name'])
                 ->orderByDesc('quoted_on')->orderByDesc('id')->get()
                 ->map(fn ($q) => [
